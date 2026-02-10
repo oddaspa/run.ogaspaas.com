@@ -253,8 +253,8 @@ exports.getStravaActivityStreams = onCall(async (request) => {
 
   try {
     const accessToken = await getStravaAccessToken(uid);
-    // Requesting heartrate, cadence, time, distance, altitude, and velocity streams
-    const streamsResponse = await fetch(`https://www.strava.com/api/v3/activities/${activityId}/streams?keys=heartrate,cadence,time,distance,altitude,velocity_smooth&key_by_type=true`, {
+    // Requesting heartrate, cadence, time, distance, altitude, velocity, and latlng streams
+    const streamsResponse = await fetch(`https://www.strava.com/api/v3/activities/${activityId}/streams?keys=heartrate,cadence,time,distance,altitude,velocity_smooth,latlng&key_by_type=true`, {
       headers: { "Authorization": `Bearer ${accessToken}` }
     });
 

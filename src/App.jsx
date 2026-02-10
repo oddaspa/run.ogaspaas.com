@@ -196,19 +196,27 @@ function App() {
             const distanceStream = streams.find(s => s.type === 'distance')?.data || [];
             const altitudeStream = streams.find(s => s.type === 'altitude')?.data || [];
             const velocityStream = streams.find(s => s.type === 'velocity_smooth')?.data || [];
+            const latlngStream = streams.find(s => s.type === 'latlng')?.data || [];
 
             const chartData = timeStream.map((t, i) => {
               const speed = velocityStream[i] || 0;
+              const hr = hrStream[i] || 0;
               // Pace in seconds per kilometer (1000m / speed m/s)
               const paceSkm = speed > 0.5 ? (1000 / speed) : null;
+              
+              // Performance efficiency: Speed (m/s) divided by HR (bpm)
+              // Higher speed at lower heart rate = higher efficiency
+              const efficiency = (hr > 40 && speed > 0.5) ? (speed / hr) : null;
               
               return {
                 time: t,
                 distance: Number((distanceStream[i] / 1000).toFixed(2)),
-                heartrate: hrStream[i] || null,
+                heartrate: hr || null,
                 cadence: (cadenceStream[i] * 2) || null,
                 altitude: altitudeStream[i] || null,
-                pace: paceSkm
+                pace: paceSkm,
+                latlng: latlngStream[i] || null,
+                efficiency
               };
             });
 
@@ -299,6 +307,24 @@ function App() {
           if (config.cachedGear) setGear(config.cachedGear);
           if (config.cachedRoutes) setStarredRoutes(config.cachedRoutes);
         }
+      } else {
+        // Clear all state when signing out
+        setStravaActivities([]);
+        setAthleteStats(null);
+        setAthleteZones(null);
+        setAthleteProfile(null);
+        setStravaClientId('');
+        setStravaClientSecret('');
+        setStravaRefreshToken('');
+        setActivityStreams({});
+        setSelectedActivityId(null);
+        setGear({});
+        setStarredRoutes([]);
+        setWaypoints([]);
+        setHistory([]);
+        setRedoStack([]);
+        setRoutePath([]);
+        setDistance(0);
       }
     });
     return () => unsubscribe();
@@ -407,6 +433,7 @@ function App() {
               activeStreamType={activeStreamType}
               setActiveStreamType={setActiveStreamType}
               starredRoutes={starredRoutes}
+              athleteZones={athleteZones}
             />
           } />
           <Route path="/dashboard" element={
