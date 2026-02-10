@@ -2,7 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { MapPin, BarChart3, Settings, Save, Zap, Clock, Activity, Map as MapIcon } from 'lucide-react';
 import polyline from '@mapbox/polyline';
-import { auth, signInWithGoogle, logout, saveStravaConfig, getStravaConfig, functions, saveStravaData } from './firebase';
+// import { auth, signInWithGoogle, logout, saveStravaConfig, getStravaConfig, functions, saveStravaData } from './firebase';
+// import { auth, signInWithGoogle, logout, functions } from './firebase';
+import { auth, signInWithGoogle, logout, functions, saveGarminData } from './firebase';
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 
@@ -28,9 +32,6 @@ const NavLink = ({ to, icon: Icon, children }) => {
 function App() {
   const [user, setUser] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [stravaClientId, setStravaClientId] = useState('');
-  const [stravaClientSecret, setStravaClientSecret] = useState('');
-  const [stravaRefreshToken, setStravaRefreshToken] = useState('');
   const [waypoints, setWaypoints] = useState([]);
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
@@ -39,8 +40,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [mapCenter, setMapCenter] = useState(null);
-  const [stravaActivities, setStravaActivities] = useState([]);
-  const [athleteStats, setAthleteStats] = useState(null);
   const [athleteZones, setAthleteZones] = useState(null);
   const [athleteProfile, setAthleteProfile] = useState(null);
   const [selectedActivityId, setSelectedActivityId] = useState(null);
@@ -52,21 +51,28 @@ function App() {
   const [activeStreamType, setActiveStreamType] = useState('heartrate');
   const [gear, setGear] = useState({});
   const [starredRoutes, setStarredRoutes] = useState([]);
+  const [garminActivities, setGarminActivities] = useState([]);
+  const [garminStats, setGarminStats] = useState(null);
+  const [garminEmail, setGarminEmail] = useState('');
+  const [garminPassword, setGarminPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaState, setMfaState] = useState(null);
+  const [isGarminLinked, setIsGarminLinked] = useState(false);
 
   const stats = useMemo(() => {
-    if (!stravaActivities.length) return null;
-    const totalDistance = stravaActivities.reduce((acc, a) => acc + (a.distance || 0), 0);
-    const totalElevation = stravaActivities.reduce((acc, a) => acc + (a.total_elevation_gain || 0), 0);
-    const totalTime = stravaActivities.reduce((acc, a) => acc + (a.moving_time || 0), 0);
-    const gpsCount = stravaActivities.filter(a => a.map?.summary_polyline).length;
+    if (!garminActivities.length) return null;
+    const totalDistance = garminActivities.reduce((acc, a) => acc + (a.distance || 0), 0);
+    const totalElevation = garminActivities.reduce((acc, a) => acc + (a.total_elevation_gain || 0), 0);
+    const totalTime = garminActivities.reduce((acc, a) => acc + (a.moving_time || 0), 0);
+    const gpsCount = garminActivities.filter(a => a.decodedPolyline).length;
     return {
       totalDistance: (totalDistance / 1000).toFixed(1),
       totalElevation,
       totalHours: Math.floor(totalTime / 3600),
-      count: stravaActivities.length,
+      count: garminActivities.length,
       gpsCount
     };
-  }, [stravaActivities]);
+  }, [garminActivities]);
 
   const saveToHistory = (newWaypoints) => {
     setHistory(prev => [...prev, waypoints]);
@@ -110,62 +116,149 @@ function App() {
     } catch (err) { console.error("Search error", err); }
   };
 
-  const fetchStravaActivities = async (isDeep = false) => {
+  const fetchGarminActivities = async () => {
     if (!user) return;
     setIsLoading(true);
-    setRateLimitExceeded(false);
     try {
-      const getActivities = httpsCallable(functions, 'getStravaActivities');
-      const result = await getActivities({ deep: isDeep });
+      const getActivities = httpsCallable(functions, 'get_garmin_activities');
+      const result = await getActivities();
       
-      if (result.data.rateLimitHit) {
-        setRateLimitExceeded(true);
-        const now = new Date();
-        const minutes = now.getMinutes();
-        const seconds = now.getSeconds();
-        const nextWindow = Math.ceil((minutes + 1) / 15) * 15;
-        const diffSeconds = ((nextWindow - minutes - 1) * 60) + (60 - seconds);
-        setSecondsToReset(diffSeconds);
-      }
-
       if (result.data.activities) {
-        const decodedActivities = result.data.activities.map(a => {
-          if (a.decodedPolyline) return a;
-          let decodedPolyline = null;
-          if (a.map && a.map.summary_polyline) {
-            try { decodedPolyline = polyline.decode(a.map.summary_polyline); } catch (e) { console.error(e); }
-          }
-          return { ...a, decodedPolyline };
+        const mappedActivities = result.data.activities.map(a => {
+          return {
+            id: a.activityId,
+            name: a.activityName,
+            start_date: a.startTimeLocal,
+            distance: a.distance,
+            moving_time: a.movingDuration || a.duration,
+            total_elevation_gain: a.elevationGain,
+            type: a.activityType.typeKey,
+            sport_type: a.activityType.typeKey,
+            average_heartrate: a.averageHR,
+            max_heartrate: a.maxHR,
+            average_cadence: a.averageRunningCadenceInStepsPerMinute || a.averageRunCadence, 
+            garmin_raw: a,
+            source: 'garmin'
+          };
         });
-        setStravaActivities(decodedActivities);
+        setGarminActivities(mappedActivities);
         
-        const activitiesToSave = decodedActivities.map(({ decodedPolyline, ...rest }) => rest);
+        // Handle Garmin stats/profile if returned
+        if (result.data.stats) {
+            setGarminStats(result.data.stats);
+            // Use Garmin's name/data
+            setAthleteProfile({
+                fullName: result.data.fullName || result.data.stats.displayName || 'Garmin User',
+                profile: result.data.activities[0]?.ownerProfileImageUrlLarge || null 
+            });
+        }
         
-        await saveStravaData(
-          user.uid, 
-          activitiesToSave, 
-          result.data.athleteStats, 
-          result.data.athleteZones, 
-          result.data.athleteProfile,
-          result.data.gear,
-          starredRoutes
-        );
+        await saveGarminData(user.uid, mappedActivities, result.data.stats);
       }
-      if (result.data.athleteStats) setAthleteStats(result.data.athleteStats);
-      if (result.data.athleteZones) setAthleteZones(result.data.athleteZones);
-      if (result.data.athleteProfile) setAthleteProfile(result.data.athleteProfile);
-      if (result.data.gear) setGear(result.data.gear);
+    } catch (err) {
+      console.error("Garmin fetch failed", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      try {
-        const getRoutes = httpsCallable(functions, 'getStravaStarredRoutes');
-        const routeResult = await getRoutes();
-        if (routeResult.data.routes) setStarredRoutes(routeResult.data.routes);
-      } catch (e) { console.error("Route fetch failed", e); }
+  const fetchGarminActivityDetail = async (activityId) => {
+    setSelectedActivityId(activityId);
+    setIsLoading(true);
+    try {
+      const getDetail = httpsCallable(functions, 'get_garmin_activity_details');
+      const result = await getDetail({ activityId });
+      
+      if (result.data.details) {
+        const details = result.data.details;
+        const descriptors = details.metricDescriptors || [];
+        const metricsData = details.activityDetailMetrics || [];
 
-    } catch (err) { 
+        // Map keys to their indices in the metrics arrays
+        const keyToIndex = {};
+        descriptors.forEach(d => { keyToIndex[d.key] = d.metricsIndex; });
+
+        const latIdx = keyToIndex['directLatitude'];
+        const lonIdx = keyToIndex['directLongitude'];
+        const hrIdx = keyToIndex['directHeartRate'];
+        const speedIdx = keyToIndex['directSpeed'];
+        const cadenceIdx = keyToIndex['directRunCadence'] || keyToIndex['directDoubleCadence'];
+        const altIdx = keyToIndex['directElevation'];
+        const distIdx = keyToIndex['sumDistance'];
+        const timeIdx = keyToIndex['sumDuration'];
+
+        // 1. Process Polyline and Chart Data
+        const decodedPolyline = [];
+        const chartData = [];
+
+        metricsData.forEach((m, i) => {
+          const metrics = m.metrics;
+          const lat = metrics[latIdx];
+          const lon = metrics[lonIdx];
+          
+          if (lat !== null && lon !== null) {
+            decodedPolyline.push([lat, lon]);
+          }
+
+          const s = metrics[speedIdx] || 0;
+          const hr = metrics[hrIdx];
+          const dist = metrics[distIdx] ? metrics[distIdx] / 1000 : 0;
+          
+          chartData.push({
+            time: metrics[timeIdx] ? metrics[timeIdx] / 1000 : i,
+            distance: Number(dist.toFixed(2)),
+            heartrate: hr,
+            cadence: metrics[cadenceIdx],
+            altitude: metrics[altIdx],
+            pace: s > 0.5 ? (1000 / s) : null,
+            efficiency: (hr > 40 && s > 0.5) ? (s / hr) : null,
+            latlng: (lat !== null && lon !== null) ? [lat, lon] : null
+          });
+        });
+
+        setActivityStreams(prev => ({ ...prev, [activityId]: chartData }));
+        if (decodedPolyline.length > 0) {
+          setGarminActivities(prev => prev.map(a => a.id === activityId ? { ...a, decodedPolyline } : a));
+          setMapCenter(decodedPolyline[0]);
+        }
+      }
+    } catch (err) {
+      console.error("Garmin detail fetch failed", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLinkGarmin = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const linkAccount = httpsCallable(functions, 'link_garmin_account');
+      const result = await linkAccount({ 
+        email: garminEmail, 
+        password: garminPassword,
+        mfaCode: mfaCode 
+      });
+      
+      if (result.data.status === 'needs_mfa') {
+        setMfaState(result.data.state);
+        alert("MFA Code required. Check your email/app and enter it below.");
+      } else if (result.data.success) {
+        setIsGarminLinked(true);
+        setMfaState(null);
+        setMfaCode('');
+        alert("Garmin account linked successfully!");
+        fetchGarminActivities();
+      } else if (result.data.error) {
+        alert("Error linking Garmin: " + result.data.error);
+      }
+    } catch (err) {
       console.error(err);
-      if (err.message?.includes('429')) setRateLimitExceeded(true);
-    } finally { setIsLoading(false); }
+      alert("Failed to link Garmin account.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const fetchStravaActivityDetail = async (activityId) => {
@@ -262,60 +355,46 @@ function App() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   }, [secondsToReset]);
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    if (code && user) {
-      const exchangeCode = async () => {
-        setIsLoading(true);
-        try {
-          const exchangeStravaCode = httpsCallable(functions, 'exchangeStravaCode');
-          await exchangeStravaCode({ code });
-          // Clear URL params and fetch activities
-          window.history.replaceState({}, document.title, window.location.pathname);
-          fetchStravaActivities();
-        } catch (err) { console.error("Code exchange failed", err); }
-        finally { setIsLoading(false); }
-      };
-      exchangeCode();
-    }
-  }, [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        const config = await getStravaConfig(u.uid);
+        // Use direct Firestore access instead of Strava-named helper
+        const docRef = doc(db, "users", u.uid);
+        const docSnap = await getDoc(docRef);
+        const config = docSnap.exists() ? docSnap.data() : null;
+        
         if (config) {
-          setStravaClientId(config.stravaClientId || '');
-          setStravaClientSecret(config.stravaClientSecret || '');
-          setStravaRefreshToken(config.stravaRefreshToken || '');
-          
-          if (config.cachedActivities) {
-            const loadedActivities = config.cachedActivities.map(a => {
+          if (config.cachedGarminActivities) {
+            const loadedActivities = config.cachedGarminActivities.map(a => {
               let decodedPolyline = null;
-              if (a.map && a.map.summary_polyline) {
+              if (a.decodedPolyline) {
+                decodedPolyline = a.decodedPolyline;
+              } else if (a.map && a.map.summary_polyline) {
                 try { decodedPolyline = polyline.decode(a.map.summary_polyline); } catch (e) { console.error(e); }
               }
               return { ...a, decodedPolyline };
             });
-            setStravaActivities(loadedActivities);
+            setGarminActivities(loadedActivities);
           }
-          if (config.cachedStats) setAthleteStats(config.cachedStats);
+          if (config.cachedGarminStats) setGarminStats(config.cachedGarminStats);
           if (config.cachedZones) setAthleteZones(config.cachedZones);
           if (config.cachedProfile) setAthleteProfile(config.cachedProfile);
           if (config.cachedGear) setGear(config.cachedGear);
           if (config.cachedRoutes) setStarredRoutes(config.cachedRoutes);
+          
+          if (config.garminEmail) {
+            setIsGarminLinked(true);
+            setGarminEmail(config.garminEmail);
+          }
         }
       } else {
         // Clear all state when signing out
-        setStravaActivities([]);
-        setAthleteStats(null);
+        setGarminActivities([]);
+        setGarminStats(null);
         setAthleteZones(null);
         setAthleteProfile(null);
-        setStravaClientId('');
-        setStravaClientSecret('');
-        setStravaRefreshToken('');
         setActivityStreams({});
         setSelectedActivityId(null);
         setGear({});
@@ -331,8 +410,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (user && stravaRefreshToken && !stravaActivities.length) fetchStravaActivities();
-  }, [user, stravaRefreshToken]);
+    if (user && isGarminLinked && !garminActivities.length) fetchGarminActivities();
+  }, [user, isGarminLinked]);
 
   useEffect(() => {
     const fetchRoute = async () => {
@@ -374,10 +453,13 @@ function App() {
                     <Clock size={12} /> {countdownText}
                   </div>
                 )}
-                <div className="flex items-center bg-slate-100 rounded-2xl p-1 border border-slate-200 shadow-inner">
-                  <button onClick={() => fetchStravaActivities(false)} disabled={isLoading} className="px-4 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-white hover:shadow-sm transition-all disabled:opacity-50">Sync</button>
-                  <button onClick={() => fetchStravaActivities(true)} disabled={isLoading} className="px-4 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-orange-600 hover:bg-white hover:shadow-sm transition-all disabled:opacity-50 flex items-center gap-2"><Zap size={10} />Deep</button>
-                </div>
+                <button 
+                  onClick={fetchGarminActivities} 
+                  disabled={isLoading} 
+                  className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Activity size={14} /> Garmin Sync
+                </button>
               </div>
             )}
             <button onClick={() => setShowSettings(!showSettings)} className="p-2.5 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-900"><Settings size={22} /></button>
@@ -399,12 +481,21 @@ function App() {
                 <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-3"><Settings className="text-blue-500" /> Config</h2>
                 <button onClick={() => setShowSettings(false)} className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 text-xl font-light">×</button>
               </div>
-              <form onSubmit={handleSaveStrava} className="space-y-6">
-                <InputField label="Client ID" value={stravaClientId} onChange={setStravaClientId} />
-                <InputField label="Client Secret" value={stravaClientSecret} onChange={setStravaClientSecret} type="password" />
-                <InputField label="Refresh Token" value={stravaRefreshToken} onChange={setStravaRefreshToken} type="password" />
-                <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl shadow-slate-300 uppercase text-xs tracking-widest mt-4"><Save size={18} /> Save Settings</button>
-              </form>
+              <div className="my-8">
+                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight mb-6 flex items-center gap-3"><Activity className="text-blue-500" /> Garmin Connect</h3>
+                <form onSubmit={handleLinkGarmin} className="space-y-4">
+                  <InputField label="Garmin Email" value={garminEmail} onChange={setGarminEmail} />
+                  <InputField label="Garmin Password" value={garminPassword} onChange={setGarminPassword} type="password" />
+                  {mfaState && (
+                    <div className="animate-in slide-in-from-top-2 duration-200">
+                      <InputField label="MFA Code" value={mfaCode} onChange={setMfaCode} />
+                    </div>
+                  )}
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl shadow-blue-200 uppercase text-xs tracking-widest mt-4">
+                    <Zap size={18} /> {mfaState ? 'Confirm MFA' : (isGarminLinked ? 'Update Garmin Link' : 'Link Garmin Account')}
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         )}
@@ -412,12 +503,12 @@ function App() {
         <Routes>
           <Route path="/" element={
             <RoutePlanner 
-              stravaActivities={stravaActivities} 
+              stravaActivities={garminActivities} 
               selectedActivityId={selectedActivityId} 
               setSelectedActivityId={setSelectedActivityId}
               isLoading={isLoading}
-              fetchStravaActivities={fetchStravaActivities}
-              fetchStravaActivityDetail={fetchStravaActivityDetail}
+              fetchStravaActivities={fetchGarminActivities}
+              fetchStravaActivityDetail={fetchGarminActivityDetail}
               mapCenter={mapCenter} setMapCenter={setMapCenter}
               waypoints={waypoints} setWaypoints={setWaypoints}
               history={history} undo={undo} redo={redo} redoStack={redoStack}
@@ -438,8 +529,8 @@ function App() {
           } />
           <Route path="/dashboard" element={
             <Dashboard 
-              stravaActivities={stravaActivities} 
-              athleteStats={athleteStats} 
+              stravaActivities={garminActivities} 
+              athleteStats={garminStats} 
               athleteZones={athleteZones} 
               athleteProfile={athleteProfile} 
               rateLimitExceeded={rateLimitExceeded} 

@@ -39,34 +39,11 @@ export const signInWithGoogle = async () => {
 
 export const logout = () => signOut(auth);
 
-export const saveStravaConfig = async (uid, clientId, clientSecret, refreshToken) => {
+export const saveGarminData = async (uid, activities, stats) => {
   const data = {
-    stravaClientId: clientId,
-    stravaClientSecret: clientSecret,
-    updatedAt: new Date()
+    cachedGarminActivities: activities,
+    cachedGarminStats: stats,
+    lastGarminSyncedAt: new Date()
   };
-  if (refreshToken) {
-    data.stravaRefreshToken = refreshToken;
-  }
   await setDoc(doc(db, "users", uid), data, { merge: true });
-};
-
-export const saveStravaData = async (uid, activities, stats, zones, profile, gear, routes) => {
-  const data = {
-    cachedActivities: activities,
-    cachedStats: stats,
-    cachedZones: zones,
-    cachedProfile: profile,
-    lastSyncedAt: new Date()
-  };
-  if (gear) data.cachedGear = gear;
-  if (routes) data.cachedRoutes = routes;
-  
-  await setDoc(doc(db, "users", uid), data, { merge: true });
-};
-
-export const getStravaConfig = async (uid) => {
-  const docRef = doc(db, "users", uid);
-  const docSnap = await getDoc(docRef);
-  return docSnap.exists() ? docSnap.data() : null;
 };

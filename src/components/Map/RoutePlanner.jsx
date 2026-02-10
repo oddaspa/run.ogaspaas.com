@@ -30,7 +30,7 @@ function MapEvents({ onMapClick, onEmptyClick, enabled, setHoveredActivityId, se
 
 function MapController({ centerPos, bottomOffset, selectedActivity }) {
   const map = useMapEvents({});
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedActivity?.decodedPolyline) {
       // Focus on the entire route if it exists
       map.invalidateSize(); // Ensure map dimensions are correct
@@ -206,9 +206,9 @@ export default function RoutePlanner({
                 {/* Visual Line */}
                 <Polyline 
                   positions={activity.decodedPolyline} 
-                  color="#f97316" 
+                  color={activity.source === 'garmin' ? "#3b82f6" : "#f97316"} 
                   weight={2} 
-                  opacity={0.2} 
+                  opacity={0.3} 
                   interactive={false}
                 />
                 {/* Interaction / Hit Area */}
@@ -483,6 +483,8 @@ function PerformancePolyline({ stream, type, children, onPointClick, formatPace,
   const metricKey = type === 'pace' ? 'pace' : 'heartrate';
   const validPoints = stream.filter(p => p.latlng && p[metricKey] !== null);
   
+  if (validPoints.length < 2) return null;
+
   const values = validPoints.map(p => p[metricKey]);
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
   const hrZones = athleteZones?.heart_rate?.zones || [];
@@ -495,13 +497,21 @@ function PerformancePolyline({ stream, type, children, onPointClick, formatPace,
         
         let color = "#eab308"; // Default yellow
 
-        if (type === 'heartrate' && hrZones.length >= 5) {
+        if (type === 'heartrate') {
           const bpm = point.heartrate;
-          if (bpm <= hrZones[0].max) color = "#94a3b8"; // Z1 - Warmup
-          else if (bpm <= hrZones[1].max) color = "#3b82f6"; // Z2 - Blue
-          else if (bpm <= hrZones[2].max) color = "#22c55e"; // Z3 - Green
-          else if (bpm <= hrZones[3].max) color = "#f59e0b"; // Z4 - Amber
-          else color = "#ef4444"; // Z5 - Red
+          if (hrZones.length >= 5) {
+            if (bpm <= hrZones[0].max) color = "#94a3b8"; // Z1 - Warmup
+            else if (bpm <= hrZones[1].max) color = "#3b82f6"; // Z2 - Blue
+            else if (bpm <= hrZones[2].max) color = "#22c55e"; // Z3 - Green
+            else if (bpm <= hrZones[3].max) color = "#f59e0b"; // Z4 - Amber
+            else color = "#ef4444"; // Z5 - Red
+          } else {
+            // Default HR colors if zones not loaded
+            if (bpm < 120) color = "#3b82f6";
+            else if (bpm < 140) color = "#22c55e";
+            else if (bpm < 160) color = "#f59e0b";
+            else color = "#ef4444";
+          }
         } else {
           // Fallback to relative ratio for Pace
           const ratio = point[metricKey] / avg;
@@ -536,6 +546,7 @@ function PerformancePolyline({ stream, type, children, onPointClick, formatPace,
 }
 
 function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActivityId, fetchStravaActivityDetail, formatPace }) {
+  const isGarmin = selectedActivity.source === 'garmin';
   return (
     <Popup className="custom-strava-popup">
         <div className="p-4 min-w-[220px] space-y-4">
@@ -544,7 +555,7 @@ function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActiv
               <h4 className="font-black text-slate-900 text-sm leading-tight">{selectedActivity.name}</h4>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{new Date(selectedActivity.start_date).toLocaleDateString()}</p>
             </div>
-            <div className="bg-orange-50 p-1.5 rounded-lg text-orange-600">
+            <div className={`p-1.5 rounded-lg ${isGarmin ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>
               <Activity size={14} />
             </div>
           </div>
@@ -586,30 +597,31 @@ function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActiv
 
 function ActivityItem({ activity, isSelected, onClick }) {
   const hasGPS = !!activity.decodedPolyline;
+  const isGarmin = activity.source === 'garmin';
   
   return (
     <button
       onClick={onClick}
       className={`w-full text-left p-4 rounded-2xl border transition-all duration-300 group relative overflow-hidden ${
         isSelected 
-          ? 'border-orange-500 bg-orange-50 shadow-lg shadow-orange-100' 
-          : 'border-white bg-white hover:border-orange-200 hover:shadow-md'
+          ? (isGarmin ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-orange-500 bg-orange-50 shadow-lg shadow-orange-100')
+          : 'border-white bg-white hover:border-slate-200 hover:shadow-md'
       }`}
     >
       <div className="flex justify-between items-start mb-2">
-        <h3 className="font-black text-slate-800 text-sm line-clamp-1 group-hover:text-orange-600 transition-colors">
+        <h3 className={`font-black text-slate-800 text-sm line-clamp-1 transition-colors ${isSelected ? (isGarmin ? 'text-blue-600' : 'text-orange-600') : 'group-hover:text-slate-900'}`}>
           {activity.name}
         </h3>
         <div 
-          title={hasGPS ? "GPS Verified" : "Manual/Treadmill (No GPS)"}
-          className={`p-1 rounded-md ${hasGPS ? 'text-blue-500 bg-blue-50' : 'text-slate-300 bg-slate-50'}`}
+          title={isGarmin ? "Garmin Connect" : "Strava"}
+          className={`p-1 rounded-md ${isGarmin ? 'text-blue-500 bg-blue-50' : 'text-orange-500 bg-orange-50'}`}
         >
-          {hasGPS ? <MapPin size={12} /> : <Layers size={12} />}
+          {isGarmin ? <Activity size={12} /> : <Zap size={12} />}
         </div>
       </div>
       <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
         <span className="flex items-center gap-1.5"><Ruler size={12} className="text-slate-300"/> {(activity.distance / 1000).toFixed(1)}KM</span>
-        <span className="flex items-center gap-1.5"><Calendar size={12} className="text-slate-300"/> {new Date(activity.start_date).toLocaleDateString()}</span>
+        <span className="flex items-center gap-1.5"><MapPin size={12} className={hasGPS ? 'text-blue-400' : 'text-slate-200'}/></span>
       </div>
     </button>
   );

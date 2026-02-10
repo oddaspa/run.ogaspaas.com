@@ -19,12 +19,12 @@ export default function Dashboard({
     const now = new Date();
 
     // Cumulative & Recent Averages
-    const cumulativeDistance = athleteStats?.all_run_totals?.distance || validRuns.reduce((acc, r) => acc + (r.distance || 0), 0);
-    const cumulativeElevation = athleteStats?.all_run_totals?.elevation_gain || validRuns.reduce((acc, r) => acc + (r.total_elevation_gain || 0), 0);
+    const cumulativeDistance = (athleteStats?.all_run_totals?.distance || athleteStats?.summary?.totalDistance || athleteStats?.summary?.distance || validRuns.reduce((acc, r) => acc + (r.distance || 0), 0));
+    const cumulativeElevation = (athleteStats?.all_run_totals?.elevation_gain || athleteStats?.summary?.totalElevationGain || athleteStats?.summary?.elevationGain || validRuns.reduce((acc, r) => acc + (r.total_elevation_gain || 0), 0));
     
     const fourWeeksAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
     const last28DaysRuns = runs.filter(r => new Date(r.start_date) > fourWeeksAgo);
-    const weeklyAvgDist = last28DaysRuns.reduce((acc, r) => acc + (r.distance || 0), 0) / 4000;
+    const weeklyAvgDist = last28DaysRuns.reduce((acc, r) => acc + (r.distance || 0), 0) / 4;
     const weeklyAvgTime = last28DaysRuns.reduce((acc, r) => acc + (r.moving_time || 0), 0) / 4;
 
     const formatPace = (p) => {
@@ -64,26 +64,28 @@ export default function Dashboard({
     });
 
     let streakWeeks = 0;
-    for (let i = 0; i < 52; i++) {
-      const s = new Date(weekStart);
-      s.setDate(s.getDate() - (i * 7));
-      const hasActivity = runs.some(r => {
-        const d = new Date(r.start_date);
-        return d >= s && d <= new Date(s.getTime() + 7 * 24 * 60 * 60 * 1000);
-      });
-      if (hasActivity) streakWeeks++;
-      else break;
+    if (runs.length > 0) {
+      for (let i = 0; i < 52; i++) {
+        const s = new Date(weekStart);
+        s.setDate(s.getDate() - (i * 7));
+        const hasActivity = runs.some(r => {
+          const d = new Date(r.start_date);
+          return d >= s && d <= new Date(s.getTime() + 7 * 24 * 60 * 60 * 1000);
+        });
+        if (hasActivity) streakWeeks++;
+        else break;
+      }
     }
 
     // Performance Stats
-    const activitiesWithHR = validRuns.filter(r => r.has_heartrate && r.average_heartrate);
+    const activitiesWithHR = validRuns.filter(r => (r.has_heartrate || r.source === 'garmin') && r.average_heartrate);
     const avgHR = activitiesWithHR.length > 0 
       ? Math.round(activitiesWithHR.reduce((acc, r) => acc + r.average_heartrate, 0) / activitiesWithHR.length)
       : null;
 
     const activitiesWithCadence = validRuns.filter(r => r.average_cadence);
     const avgCadence = activitiesWithCadence.length > 0
-      ? Math.round(activitiesWithCadence.reduce((acc, r) => acc + r.average_cadence, 0) / activitiesWithCadence.length) * 2
+      ? Math.round(activitiesWithCadence.reduce((acc, r) => acc + r.average_cadence, 0) / activitiesWithCadence.length) * (activitiesWithCadence[0].source === 'garmin' ? 1 : 2)
       : null;
 
     // Gear
@@ -137,13 +139,13 @@ export default function Dashboard({
             <div className="space-y-4">
               <div>
                 <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-none mb-2">
-                  {athleteProfile?.firstname} {athleteProfile?.lastname}
+                  {athleteProfile?.firstname || athleteProfile?.fullName || athleteProfile?.displayName || 'Athlete'} {athleteProfile?.lastname || ''}
                 </h2>
-                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.2em]">Strava Pro Athlete</p>
+                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.2em]">{athleteProfile?.fullName ? 'Garmin Pro Athlete' : 'Strava Pro Athlete'}</p>
               </div>
               <div className="flex gap-8 justify-center md:justify-start">
-                <StatMini label="Following" value={insights.following} />
-                <StatMini label="Followers" value={insights.followers} />
+                <StatMini label="Following" value={insights.following || '--'} />
+                <StatMini label="Followers" value={insights.followers || '--'} />
                 <StatMini label="Activities" value={insights.totalActivities} />
               </div>
             </div>
@@ -160,7 +162,7 @@ export default function Dashboard({
               </div>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Latest Activity</p>
               <p className="text-lg font-black line-clamp-1">{insights.lastActivity?.name}</p>
-              <p className="text-xs text-orange-500 font-bold mt-1">
+              <p className="text-xs text-blue-500 font-bold mt-1">
                 {(insights.lastActivity?.distance / 1000).toFixed(2)} km • {new Date(insights.lastActivity?.start_date).toLocaleDateString()}
               </p>
             </div>
