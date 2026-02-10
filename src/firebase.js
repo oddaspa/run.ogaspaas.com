@@ -51,14 +51,18 @@ export const saveStravaConfig = async (uid, clientId, clientSecret, refreshToken
   await setDoc(doc(db, "users", uid), data, { merge: true });
 };
 
-export const saveStravaData = async (uid, activities, stats, zones, profile) => {
-  await setDoc(doc(db, "users", uid), {
+export const saveStravaData = async (uid, activities, stats, zones, profile, gear, routes) => {
+  const data = {
     cachedActivities: activities,
     cachedStats: stats,
     cachedZones: zones,
     cachedProfile: profile,
     lastSyncedAt: new Date()
-  }, { merge: true });
+  };
+  if (gear) data.cachedGear = gear;
+  if (routes) data.cachedRoutes = routes;
+  
+  await setDoc(doc(db, "users", uid), data, { merge: true });
 };
 
 export const getStravaConfig = async (uid) => {

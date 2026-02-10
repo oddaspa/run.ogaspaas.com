@@ -11,3 +11,19 @@
   height: 100%;
   width: 100%;
 }
+
+.custom-strava-popup .leaflet-popup-content-wrapper {
+  border-radius: 1.5rem;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.15);
+}
+
+.custom-strava-popup .leaflet-popup-content {
+  margin: 0;
+  width: auto !important;
+}
+
+.custom-strava-popup .leaflet-popup-tip {
+  display: none;
+}
