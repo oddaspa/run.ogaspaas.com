@@ -1,0 +1,22 @@
+[
+  {
+    "gearPk": 46643150,
+    "uuid": "091b195733ac44b6bc93ec4aeeaa4998",
+    "userProfilePk": 139603148,
+    "gearMakeName": "Other",
+    "gearModelName": "Unknown Shoes",
+    "gearTypeName": "Shoes",
+    "gearStatusName": "active",
+    "displayName": null,
+    "customMakeModel": "Glycerin Max",
+    "imageNameLarge": null,
+    "imageNameMedium": null,
+    "imageNameSmall": null,
+    "dateBegin": "2025-11-25T00:00:00.0",
+    "dateEnd": null,
+    "maximumMeters": 643738.0,
+    "notified": false,
+    "createDate": "2025-11-25T20:59:33.0",
+    "updateDate": "2025-11-25T20:59:33.0"
+  }
+]

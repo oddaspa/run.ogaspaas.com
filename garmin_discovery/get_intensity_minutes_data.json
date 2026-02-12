@@ -1,0 +1,45 @@
+{
+  "userProfilePK": 139603148,
+  "calendarDate": "2026-02-11",
+  "startTimestampGMT": "2026-02-10T23:00:00.0",
+  "endTimestampGMT": "2026-02-11T13:37:00.0",
+  "startTimestampLocal": "2026-02-11T00:00:00.0",
+  "endTimestampLocal": "2026-02-11T14:37:00.0",
+  "weeklyModerate": 30,
+  "weeklyVigorous": 69,
+  "weeklyTotal": 168,
+  "weekGoal": 150,
+  "dayOfGoalMet": "Wed",
+  "startDayMinutes": 134,
+  "endDayMinutes": 168,
+  "moderateMinutes": 26,
+  "vigorousMinutes": 4,
+  "imValueDescriptorsDTOList": [
+    {
+      "index": 0,
+      "key": "timestamp"
+    },
+    {
+      "index": 1,
+      "key": "value"
+    }
+  ],
+  "imValuesArray": [
+    [
+      1770806700000,
+      7
+    ],
+    [
+      1770808500000,
+      1
+    ],
+    [
+      1770809400000,
+      16
+    ],
+    [
+      1770810300000,
+      10
+    ]
+  ]
+}

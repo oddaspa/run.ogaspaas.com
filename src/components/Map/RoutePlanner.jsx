@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMapEvents } from 'react-leaflet';
-import { Search, Undo2, Redo2, ArrowUpDown, Loader2, MapPin, Activity, Ruler, Calendar, Trash2, Clock, Footprints, Heart, TrendingUp, BarChart3, Layers } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Search, Undo2, Redo2, ArrowUpDown, Loader2, MapPin, Activity, Ruler, Calendar, Trash2, Clock, Footprints, Heart, TrendingUp, BarChart3, Layers, Dumbbell, ArrowRight } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 
 function MapEvents({ onMapClick, onEmptyClick, enabled, setHoveredActivityId, setChartHoverPoint }) {
@@ -28,23 +30,38 @@ function MapEvents({ onMapClick, onEmptyClick, enabled, setHoveredActivityId, se
   return null;
 }
 
-function MapController({ centerPos, bottomOffset, selectedActivity }) {
+function MapController({ centerPos, bottomOffset, selectedActivity, waypoints }) {
   const map = useMapEvents({});
   useEffect(() => {
     if (selectedActivity?.decodedPolyline) {
       // Focus on the entire route if it exists
       map.invalidateSize(); // Ensure map dimensions are correct
-      map.fitBounds(selectedActivity.decodedPolyline, {
-        paddingBottomRight: [0, bottomOffset],
-        padding: [50, 50],
-        maxZoom: 16
-      });
-    } else if (centerPos) {
+      
+      const isMobile = window.innerWidth < 768;
+      const paddingValue = isMobile ? 30 : 50;
+      const bottomOffsetValue = isMobile ? bottomOffset * 1.2 : bottomOffset;
+
+      const validPolyline = selectedActivity.decodedPolyline.filter(p => 
+        p && p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])
+      );
+
+      if (validPolyline.length > 0) {
+        map.fitBounds(validPolyline, {
+          paddingBottomRight: [0, bottomOffsetValue],
+          paddingTopLeft: [0, isMobile ? 80 : 0],
+          padding: [paddingValue, paddingValue],
+          maxZoom: 16
+        });
+      }
+    } else if (centerPos && !isNaN(centerPos[0]) && !isNaN(centerPos[1])) {
       // Fallback to single point centering
       const targetPoint = map.project(centerPos, map.getZoom());
       targetPoint.y += bottomOffset / 2;
       const targetLatLng = map.unproject(targetPoint, map.getZoom());
       map.flyTo(targetLatLng, 13);
+    } else if (waypoints.length > 0) {
+       // Fit to planning route
+       map.fitBounds(waypoints, { padding: [50, 50] });
     }
   }, [centerPos, map, bottomOffset, selectedActivity]);
   return null;
@@ -64,8 +81,10 @@ export default function RoutePlanner({
   showSidebar, setShowSidebar,
   showStats, setShowStats, stats,
   activityStreams, activeStreamType, setActiveStreamType,
-  starredRoutes, athleteZones
+  starredRoutes, athleteZones,
+  formatPace, formatTimeTooltip
 }) {
+  const navigate = useNavigate();
   const [gpsOnly, setGpsOnly] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [isPlanningMode, setIsPlanningMode] = useState(false);
@@ -94,11 +113,11 @@ export default function RoutePlanner({
   }, [selectedActivityId]);
 
   return (
-    <div className="flex flex-1 overflow-hidden relative">
+    <div className="flex flex-1 overflow-hidden relative flex-col md:flex-row">
       {/* Sleek Sidebar */}
       <aside 
-        className={`bg-white border-r border-slate-200 transition-all duration-500 ease-in-out overflow-hidden flex flex-col z-[1002] ${
-          showSidebar ? 'w-80' : 'w-0'
+        className={`bg-white border-r border-slate-200 transition-all duration-500 ease-in-out overflow-hidden flex flex-col z-[1002] absolute md:relative h-full ${
+          showSidebar ? 'w-80 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0'
         }`}
       >
         <div className="p-6 border-b border-slate-100 space-y-4">
@@ -125,8 +144,12 @@ export default function RoutePlanner({
               isSelected={selectedActivityId === activity.id}
               onClick={() => {
                 setSelectedActivityId(activity.id);
-                if (activity.decodedPolyline) setMapCenter(activity.decodedPolyline[0]);
-                else fetchStravaActivityDetail(activity.id);
+                if (activity.lat && activity.lng) {
+                  setMapCenter([activity.lat, activity.lng]);
+                }
+                if (activity.type !== 'treadmill_running' && !activityStreams[activity.id]) {
+                  fetchStravaActivityDetail(activity.id);
+                }
               }}
             />
           ))}
@@ -135,20 +158,28 @@ export default function RoutePlanner({
 
       <div className="flex-1 relative overflow-hidden flex flex-col">
         {/* Floating Controls */}
-        <div className="absolute top-6 left-8 z-[1001] flex flex-col gap-4">
-          <form onSubmit={handleSearch} className="bg-white/90 backdrop-blur-xl p-2 rounded-3xl shadow-2xl border border-white flex items-center gap-2 w-80">
-            <div className="pl-3 text-slate-400"><Search size={18} /></div>
-            <input 
-              type="text" 
-              placeholder="Search destination..." 
-              value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
-              className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-slate-700 placeholder:text-slate-400 py-2" 
-            />
-            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-2xl text-xs font-black transition-all shadow-lg shadow-blue-200">GO</button>
-          </form>
+        <div className="absolute top-4 md:top-6 left-4 md:left-8 z-[1001] flex flex-col gap-3 md:gap-4 max-w-[calc(100%-2rem)]">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowSidebar(!showSidebar)}
+              className="md:hidden bg-white/90 backdrop-blur-xl p-3 rounded-2xl shadow-xl border border-white text-slate-600 active:scale-95 transition-all"
+            >
+              <Activity size={20} />
+            </button>
+            <form onSubmit={handleSearch} className="bg-white/90 backdrop-blur-xl p-1.5 md:p-2 rounded-2xl md:rounded-3xl shadow-2xl border border-white flex items-center gap-2 w-full md:w-80">
+              <div className="pl-2 md:pl-3 text-slate-400"><Search size={18} /></div>
+              <input 
+                type="text" 
+                placeholder="Search..." 
+                value={searchQuery} 
+                onChange={(e) => setSearchQuery(e.target.value)} 
+                className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-slate-700 placeholder:text-slate-400 py-1.5 md:py-2" 
+              />
+              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl text-[10px] md:text-xs font-black transition-all shadow-lg shadow-blue-200">GO</button>
+            </form>
+          </div>
 
-          <div className="bg-white/90 backdrop-blur-xl p-2 rounded-3xl shadow-2xl border border-white flex flex-col gap-1 w-fit">
+          <div className="bg-white/90 backdrop-blur-xl p-1.5 md:p-2 rounded-2xl md:rounded-3xl shadow-2xl border border-white flex flex-row md:flex-col gap-1 w-fit">
             <ControlButton 
               onClick={() => setIsPlanningMode(!isPlanningMode)} 
               active={isPlanningMode}
@@ -176,6 +207,7 @@ export default function RoutePlanner({
               centerPos={mapCenter} 
               bottomOffset={selectedActivity ? window.innerHeight / 3 : 0} 
               selectedActivity={selectedActivity}
+              waypoints={waypoints}
             />
             <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
             <MapEvents 
@@ -199,6 +231,36 @@ export default function RoutePlanner({
 
             {routePath.length > 0 && <Polyline positions={routePath} color="#3b82f6" weight={6} opacity={0.9} />}
             
+            {/* Treadmill Activities Markers */}
+            {stravaActivities
+              .filter(a => a.type === 'treadmill_running' && a.lat && a.lng)
+              .map(activity => (
+                <Marker 
+                  key={`treadmill-${activity.id}`} 
+                  position={[activity.lat, activity.lng]}
+                  icon={L.divIcon({
+                    className: 'bg-transparent',
+                    html: `<div class="w-8 h-8 bg-blue-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11"/><path d="m6.5 17.5 11-11"/><path d="M2 21h20"/><path d="M7 3h10"/><path d="M3 3v18"/><path d="M21 3v18"/></svg></div>`,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                  })}
+                >
+                  <Popup>
+                    <div className="p-2 text-center">
+                      <p className="font-black text-xs uppercase text-slate-900">{activity.name}</p>
+                      <p className="text-[10px] font-bold text-slate-400 mt-1">TREADMILL SESSION</p>
+                      <button 
+                        onClick={() => setSelectedActivityId(activity.id)}
+                        className="mt-2 text-blue-600 font-bold text-[10px] uppercase"
+                      >
+                        SELECT
+                      </button>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))
+            }
+
             {showHeatmap && stravaActivities
               .filter(a => a.decodedPolyline && a.id !== selectedActivityId)
               .map((activity) => (
@@ -206,7 +268,7 @@ export default function RoutePlanner({
                 {/* Visual Line */}
                 <Polyline 
                   positions={activity.decodedPolyline} 
-                  color={activity.source === 'garmin' ? "#3b82f6" : "#f97316"} 
+                  color="#3b82f6" 
                   weight={2} 
                   opacity={0.3} 
                   interactive={false}
@@ -226,8 +288,8 @@ export default function RoutePlanner({
                         fetchStravaActivityDetail(activity.id);
                       }
                     },
-                    mouseover: () => setHoveredActivityId(activity.id),
-                    mouseout: () => setHoveredActivityId(null)
+                    mouseover: () => { if (!L.Browser.mobile) setHoveredActivityId(activity.id); },
+                    mouseout: () => { if (!L.Browser.mobile) setHoveredActivityId(null); }
                   }}
                 />
               </React.Fragment>
@@ -261,7 +323,7 @@ export default function RoutePlanner({
                       click: (e) => L.DomEvent.stopPropagation(e)
                     }}
                   >
-                    <ActivityPopup selectedActivity={selectedActivity} stats={stats} activityStreams={activityStreams} selectedActivityId={selectedActivityId} fetchStravaActivityDetail={fetchStravaActivityDetail} formatPace={formatPace} />
+                    <ActivityPopup selectedActivity={selectedActivity} stats={stats} activityStreams={activityStreams} selectedActivityId={selectedActivityId} fetchStravaActivityDetail={fetchStravaActivityDetail} formatPace={formatPace} formatTimeTooltip={formatTimeTooltip} />
                   </Polyline>
                 ) : (
                   <PerformancePolyline 
@@ -271,7 +333,7 @@ export default function RoutePlanner({
                     formatPace={formatPace}
                     athleteZones={athleteZones}
                   >
-                    <ActivityPopup selectedActivity={selectedActivity} stats={stats} activityStreams={activityStreams} selectedActivityId={selectedActivityId} fetchStravaActivityDetail={fetchStravaActivityDetail} formatPace={formatPace} />
+                    <ActivityPopup selectedActivity={selectedActivity} stats={stats} activityStreams={activityStreams} selectedActivityId={selectedActivityId} fetchStravaActivityDetail={fetchStravaActivityDetail} formatPace={formatPace} formatTimeTooltip={formatTimeTooltip} />
                   </PerformancePolyline>
                 )}
               </>
@@ -296,30 +358,30 @@ export default function RoutePlanner({
 
         {/* Selected Activity Details & Streams */}
         {selectedActivity && (
-          <div className="bg-white border-t border-slate-200 p-6 z-[1003] shadow-2xl animate-in slide-in-from-bottom duration-500 h-1/3 flex flex-col overflow-hidden">
-            <div className="max-w-7xl mx-auto space-y-6 w-full flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-8">
-                  <div>
-                    <h3 className="text-2xl font-black text-slate-900 tracking-tight">{selectedActivity.name}</h3>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">{new Date(selectedActivity.start_date).toLocaleString()} • {selectedActivity.sport_type || selectedActivity.type}</p>
+          <div className="bg-white border-t border-slate-200 p-4 md:p-6 z-[1003] shadow-2xl animate-in slide-in-from-bottom duration-500 h-[45%] md:h-1/3 flex flex-col overflow-hidden">
+            <div className="max-w-7xl mx-auto space-y-4 md:space-y-6 w-full flex-1 flex flex-col min-h-0">
+              <div className="flex flex-col md:flex-row md:items-center justify-between shrink-0 gap-4">
+                <div className="flex items-center gap-4 md:gap-8">
+                  <div className="min-w-0">
+                    <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight truncate">{selectedActivity.name}</h3>
+                    <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5 md:mt-1">{new Date(selectedActivity.start_date).toLocaleString()} • {selectedActivity.sport_type || selectedActivity.type}</p>
                   </div>
-                  <div className="h-12 w-px bg-slate-100"></div>
-                  <div className="flex gap-10">
-                    <DetailStat label="Distance" value={(selectedActivity.distance / 1000).toFixed(2)} unit="km" />
+                  <div className="hidden md:block h-12 w-px bg-slate-100"></div>
+                  <div className="flex gap-4 md:gap-10 overflow-x-auto no-scrollbar pb-2 md:pb-0">
+                    <DetailStat label="Dist" value={(selectedActivity.distance / 1000).toFixed(2)} unit="km" />
                     <DetailStat label="Pace" value={formatPace(selectedActivity.moving_time / (selectedActivity.distance / 1000))} unit="/km" />
-                    {selectedActivity.average_heartrate && <DetailStat label="Heart Rate" value={Math.round(selectedActivity.average_heartrate)} unit="bpm" color="red" />}
-                    {selectedActivity.average_cadence && <DetailStat label="Cadence" value={Math.round(selectedActivity.average_cadence * 2)} unit="spm" color="emerald" />}
-                    <DetailStat label="Elevation" value={selectedActivity.total_elevation_gain} unit="m" />
+                    {selectedActivity.average_heartrate && <DetailStat label="HR" value={Math.round(selectedActivity.average_heartrate)} unit="bpm" color="red" />}
+                    {selectedActivity.average_cadence && <DetailStat label="Cad" value={Math.round(selectedActivity.average_cadence)} unit="spm" color="emerald" />}
+                    <DetailStat label="Elev" value={selectedActivity.total_elevation_gain} unit="m" />
                     <DetailStat label="Time" value={formatTimeTooltip(selectedActivity.moving_time)} unit="" />
                   </div>
                 </div>
 
-                  <div className="flex items-center gap-6">
+                  <div className="flex items-center justify-between md:justify-end gap-2 md:gap-6">
                     {activityStreams[selectedActivityId] && (
-                      <div className="flex gap-4">
+                      <div className="flex gap-2 md:gap-4 overflow-x-auto no-scrollbar py-1">
                         {/* Map Mode Selector */}
-                        <div className="flex bg-slate-100 p-1.5 rounded-[1.2rem] border border-slate-200">
+                        <div className="flex bg-slate-100 p-1 rounded-[1rem] md:rounded-[1.2rem] border border-slate-200 shrink-0">
                           <StreamToggle 
                             active={perfMapType === 'none'} 
                             onClick={() => setPerfMapType('none')} 
@@ -358,13 +420,21 @@ export default function RoutePlanner({
                         </div>
                       </div>
                     )}
-                    <button onClick={() => setSelectedActivityId(null)} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-all text-2xl font-light">×</button>
+                    <div className="flex gap-2 shrink-0">
+                       <button 
+                         onClick={() => navigate(`/activity/${selectedActivityId}`)}
+                         className="h-10 px-4 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all flex items-center gap-2 shadow-lg whitespace-nowrap"
+                       >
+                         Deep Dive <ArrowRight size={14} />
+                       </button>
+                       <button onClick={() => setSelectedActivityId(null)} className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-all text-2xl font-light">×</button>
+                    </div>
                   </div>
               </div>
 
               {activityStreams[selectedActivityId] && (
                 <div 
-                  className="flex-1 w-full bg-slate-50/50 rounded-3xl p-4 border border-slate-100 min-h-0 relative z-[2005]"
+                  className="flex-1 w-full bg-slate-50/50 rounded-3xl p-4 border border-slate-100 min-h-[150px] relative z-[2005]"
                   onMouseLeave={() => setChartHoverPoint(null)}
                 >
                   <ResponsiveContainer width="100%" height="100%">
@@ -383,7 +453,7 @@ export default function RoutePlanner({
                       <XAxis 
                         dataKey={xAxisType} 
                         type="number"
-                        domain={['dataMin', 'dataMax']}
+                        domain={[0, 'dataMax']}
                         axisLine={false}
                         tickLine={false}
                         tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }}
@@ -392,6 +462,7 @@ export default function RoutePlanner({
                       />
                       <YAxis hide domain={['auto', 'auto']} />
                       <Tooltip 
+                        trigger="axis"
                         labelClassName="hidden"
                         contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: '900' }}
                         formatter={(val, name) => {
@@ -470,9 +541,10 @@ function formatPace(p) {
 }
 
 function formatTimeTooltip(seconds) {
+  if (seconds === null || seconds === undefined || isNaN(seconds)) return "0:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
+  const s = Math.round(seconds % 60);
   return h > 0 
     ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
     : `${m}:${s.toString().padStart(2, '0')}`;
@@ -545,17 +617,18 @@ function PerformancePolyline({ stream, type, children, onPointClick, formatPace,
   );
 }
 
-function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActivityId, fetchStravaActivityDetail, formatPace }) {
-  const isGarmin = selectedActivity.source === 'garmin';
+function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActivityId, fetchStravaActivityDetail, formatPace, formatTimeTooltip }) {
+  const isMobile = window.innerWidth < 768;
+  const navigate = useNavigate();
   return (
-    <Popup className="custom-strava-popup">
+    <Popup className="custom-strava-popup" offset={isMobile ? [0, -10] : [0, 0]}>
         <div className="p-4 min-w-[220px] space-y-4">
           <div className="flex justify-between items-start border-b border-slate-100 pb-3">
             <div>
               <h4 className="font-black text-slate-900 text-sm leading-tight">{selectedActivity.name}</h4>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{new Date(selectedActivity.start_date).toLocaleDateString()}</p>
             </div>
-            <div className={`p-1.5 rounded-lg ${isGarmin ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>
+            <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
               <Activity size={14} />
             </div>
           </div>
@@ -564,32 +637,25 @@ function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActiv
             <PopupStat label="DISTANCE" value={(selectedActivity.distance / 1000).toFixed(2)} unit="km" />
             <PopupStat label="PACE" value={formatPace(selectedActivity.moving_time / (selectedActivity.distance / 1000))} unit="/km" />
             <PopupStat label="ELEVATION" value={selectedActivity.total_elevation_gain} unit="m" />
-            <PopupStat label="TIME" value={Math.floor(selectedActivity.moving_time / 60)} unit="m" />
+            <PopupStat label="TIME" value={formatTimeTooltip ? formatTimeTooltip(selectedActivity.moving_time) : Math.floor(selectedActivity.moving_time / 60) + 'm'} unit="" />
           </div>
 
-          {stats && (
-            <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                <TrendingUp size={10} /> Performance vs Avg
-              </p>
-              <div className="space-y-2">
-                <ComparisonBar 
-                  label="Distance" 
-                  current={selectedActivity.distance / 1000} 
-                  avg={stats.totalDistance / stats.count} 
-                />
-              </div>
-            </div>
-          )}
-          
-          <button 
-            onClick={() => {
-            if (!activityStreams[selectedActivityId]) fetchStravaActivityDetail(selectedActivityId);
-            }}
-            className="w-full py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-slate-200 hover:bg-black transition-all"
-          >
-            VIEW TELEMETRY
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => {
+                if (!activityStreams[selectedActivityId]) fetchStravaActivityDetail(selectedActivityId);
+              }}
+              className="flex-1 py-2.5 bg-slate-100 text-slate-600 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+            >
+              TELEMETRY
+            </button>
+            <button 
+              onClick={() => navigate(`/activity/${selectedActivityId}`)}
+              className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center justify-center gap-1"
+            >
+              DEEP DIVE <ArrowRight size={10} />
+            </button>
+          </div>
         </div>
     </Popup>
   );
@@ -597,31 +663,36 @@ function ActivityPopup({ selectedActivity, stats, activityStreams, selectedActiv
 
 function ActivityItem({ activity, isSelected, onClick }) {
   const hasGPS = !!activity.decodedPolyline;
-  const isGarmin = activity.source === 'garmin';
+  const isTreadmill = activity.type === 'treadmill_running';
   
   return (
     <button
       onClick={onClick}
       className={`w-full text-left p-4 rounded-2xl border transition-all duration-300 group relative overflow-hidden ${
         isSelected 
-          ? (isGarmin ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' : 'border-orange-500 bg-orange-50 shadow-lg shadow-orange-100')
+          ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100'
           : 'border-white bg-white hover:border-slate-200 hover:shadow-md'
       }`}
     >
       <div className="flex justify-between items-start mb-2">
-        <h3 className={`font-black text-slate-800 text-sm line-clamp-1 transition-colors ${isSelected ? (isGarmin ? 'text-blue-600' : 'text-orange-600') : 'group-hover:text-slate-900'}`}>
+        <h3 className={`font-black text-slate-800 text-sm line-clamp-1 transition-colors ${isSelected ? 'text-blue-600' : 'group-hover:text-slate-900'}`}>
           {activity.name}
         </h3>
         <div 
-          title={isGarmin ? "Garmin Connect" : "Strava"}
-          className={`p-1 rounded-md ${isGarmin ? 'text-blue-500 bg-blue-50' : 'text-orange-500 bg-orange-50'}`}
+          className="p-1 rounded-md text-blue-500 bg-blue-50"
         >
-          {isGarmin ? <Activity size={12} /> : <Zap size={12} />}
+          {isTreadmill ? <Dumbbell size={12} /> : <Activity size={12} />}
         </div>
       </div>
       <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
         <span className="flex items-center gap-1.5"><Ruler size={12} className="text-slate-300"/> {(activity.distance / 1000).toFixed(1)}KM</span>
-        <span className="flex items-center gap-1.5"><MapPin size={12} className={hasGPS ? 'text-blue-400' : 'text-slate-200'}/></span>
+        <span className="flex items-center gap-1.5">
+          {isTreadmill ? (
+             <span className="text-amber-500 flex items-center gap-1"><Dumbbell size={12}/> GYM</span>
+          ) : (
+             <MapPin size={12} className={hasGPS ? 'text-blue-400' : 'text-slate-200'}/>
+          )}
+        </span>
       </div>
     </button>
   );
@@ -666,7 +737,7 @@ function FilterToggle({ active, onClick, label }) {
   return (
     <button 
       onClick={onClick}
-      className={`flex-1 py-2 rounded-xl text-[9px] font-black tracking-[0.15em] transition-all border ${
+      className={`flex-1 py-1.5 md:py-2 rounded-lg md:rounded-xl text-[8px] md:text-[9px] font-black tracking-widest transition-all border ${
         active ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-400 border-slate-100 hover:border-slate-200'
       }`}
     >
@@ -681,22 +752,24 @@ function ControlButton({ onClick, disabled, icon, active, title }) {
       onClick={onClick} 
       disabled={disabled} 
       title={title}
-      className={`p-3 rounded-2xl transition-all active:scale-90 ${
+      className={`p-2 md:p-3 rounded-xl md:rounded-2xl transition-all active:scale-90 ${
         active ? 'bg-blue-50 shadow-inner' : 'hover:bg-slate-50 text-slate-600'
       } disabled:opacity-20`}
     >
-      {icon}
+      {React.cloneElement(icon, { size: window.innerWidth < 768 ? 16 : 20 })}
     </button>
   );
 }
 
 function DetailStat({ label, value, unit, color }) {
   const colors = { red: 'text-red-600', emerald: 'text-emerald-600', default: 'text-slate-900' };
+  const displayValue = (value === null || value === undefined || isNaN(value)) ? '--' : value;
+  
   return (
     <div className="flex flex-col">
       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</span>
       <div className="flex items-baseline gap-1">
-        <span className={`text-xl font-black ${colors[color] || colors.default}`}>{value}</span>
+        <span className={`text-xl font-black ${colors[color] || colors.default}`}>{displayValue}</span>
         <span className="text-[10px] font-bold text-slate-400 uppercase">{unit}</span>
       </div>
     </div>

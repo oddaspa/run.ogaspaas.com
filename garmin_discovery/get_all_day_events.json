@@ -1,0 +1,42 @@
+[
+  {
+    "userProfilePk": 139603148,
+    "deviceId": 3603563792,
+    "calendarDate": "2026-02-11",
+    "startTimestampGMT": "2026-02-11T08:02:00.0",
+    "endTimestampGMT": "2026-02-11T08:49:00.0",
+    "duration": 47,
+    "activityType": "walking",
+    "activitySubType": null,
+    "startTimestampLocal": "2026-02-11T09:02:00.0",
+    "endTimestampLocal": "2026-02-11T09:49:00.0"
+  },
+  {
+    "userProfilePk": 139603148,
+    "deviceId": 3603563792,
+    "calendarDate": "2026-02-11",
+    "startTimestampGMT": "2026-02-11T10:11:00.0",
+    "endTimestampGMT": "2026-02-11T10:41:00.0",
+    "duration": 30,
+    "activityType": "walking",
+    "activitySubType": null,
+    "startTimestampLocal": "2026-02-11T11:11:00.0",
+    "endTimestampLocal": "2026-02-11T11:41:00.0",
+    "moderateIntensityMinutes": 1,
+    "vigorousIntensityMinutes": 2
+  },
+  {
+    "userProfilePk": 139603148,
+    "deviceId": 3603563792,
+    "calendarDate": "2026-02-11",
+    "startTimestampGMT": "2026-02-11T11:12:00.0",
+    "endTimestampGMT": "2026-02-11T11:31:00.0",
+    "duration": 19,
+    "activityType": "walking",
+    "activitySubType": null,
+    "startTimestampLocal": "2026-02-11T12:12:00.0",
+    "endTimestampLocal": "2026-02-11T12:31:00.0",
+    "moderateIntensityMinutes": 16,
+    "vigorousIntensityMinutes": 1
+  }
+]

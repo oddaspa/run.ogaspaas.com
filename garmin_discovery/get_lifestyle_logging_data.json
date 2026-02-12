@@ -1,0 +1,95 @@
+{
+  "dailyLogsReport": [
+    {
+      "behaviourId": 28,
+      "measurementType": "NONE",
+      "calendarDate": "2026-02-11",
+      "name": "Screens Before Bed",
+      "category": "SLEEP_RELATED",
+      "sleepRelated": true
+    },
+    {
+      "behaviourId": 1,
+      "measurementType": "QUANTITY",
+      "calendarDate": "2026-02-11",
+      "name": "Alcohol",
+      "category": "LIFESTYLE",
+      "details": [
+        {
+          "subTypeId": 1,
+          "subTypeName": "BEER"
+        },
+        {
+          "subTypeId": 2,
+          "subTypeName": "WINE"
+        },
+        {
+          "subTypeId": 3,
+          "subTypeName": "SPIRIT"
+        },
+        {
+          "subTypeId": 4,
+          "subTypeName": "OTHER"
+        }
+      ],
+      "sleepRelated": false
+    },
+    {
+      "behaviourId": 2,
+      "measurementType": "QUANTITY",
+      "calendarDate": "2026-02-11",
+      "name": "Morning Caffeine",
+      "category": "LIFESTYLE",
+      "details": [
+        {
+          "subTypeId": 1,
+          "subTypeName": "COFFEE"
+        },
+        {
+          "subTypeId": 2,
+          "subTypeName": "TEA"
+        },
+        {
+          "subTypeId": 3,
+          "subTypeName": "OTHER"
+        },
+        {
+          "subTypeId": 4,
+          "subTypeName": "SODA"
+        },
+        {
+          "subTypeId": 5,
+          "subTypeName": "ENERGY_DRINK"
+        }
+      ],
+      "sleepRelated": false
+    }
+  ],
+  "completionStats": [
+    {
+      "calendarDate": "2026-02-05",
+      "totalTracking": 3,
+      "completedTracking": 0
+    },
+    {
+      "calendarDate": "2026-02-06",
+      "totalTracking": 3,
+      "completedTracking": 0
+    },
+    {
+      "calendarDate": "2026-02-07",
+      "totalTracking": 3,
+      "completedTracking": 0
+    },
+    {
+      "calendarDate": "2026-02-08",
+      "totalTracking": 3,
+      "completedTracking": 0
+    },
+    {
+      "calendarDate": "2026-02-09",
+      "totalTracking": 3,
+      "completedTracking": 0
+    }
+  ]
+}

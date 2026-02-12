@@ -7,6 +7,51 @@ import logging
 initialize_app()
 
 @https_fn.on_call(region="europe-west1")
+def get_garmin_endpoint_data(req: https_fn.CallableRequest):
+    if req.auth is None:
+        raise https_fn.HttpsError(
+            code=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
+            message="The function must be called while authenticated."
+        )
+    
+    endpoint = req.data.get("endpoint")
+    params = req.data.get("params", {})
+    
+    if not endpoint:
+        raise https_fn.HttpsError(
+            code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
+            message="Endpoint name is required."
+        )
+
+    uid = req.auth.uid
+    db = firestore.client()
+    user_data = db.collection("users").document(uid).get().to_dict() or {}
+    email, password = user_data.get("garminEmail"), user_data.get("garminPassword")
+
+    if not email or not password:
+        return {"needsAuth": True}
+
+    try:
+        client = Garmin(email, password)
+        client.login()
+        
+        method = getattr(client, endpoint, None)
+        if not method:
+            return {"error": f"Endpoint {endpoint} not found on Garmin client."}
+
+        # Call the method with provided params
+        data = method(**params)
+        
+        return {
+            "success": True,
+            "endpoint": endpoint,
+            "data": data
+        }
+    except Exception as e:
+        logging.error(f"Garmin endpoint error ({endpoint}): {str(e)}")
+        return {"error": str(e)}
+
+@https_fn.on_call(region="europe-west1")
 def get_garmin_activities(req: https_fn.CallableRequest):
     if req.auth is None:
         raise https_fn.HttpsError(
@@ -29,19 +74,52 @@ def get_garmin_activities(req: https_fn.CallableRequest):
         client = Garmin(email, password)
         client.login()
         
-        # Garmin activities fetch
-        # By default get last 20
-        activities = client.get_activities(0, 20)
+        today = datetime.date.today().isoformat()
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
         
-        # For exploring data, we'll return a few specific details too
-        stats = client.get_stats(datetime.date.today().isoformat())
+        # Comprehensive Data Fetch
+        # 1. Activities
+        activities = client.get_activities(0, 50)
+        
+        # 2. Health & Wellness Metrics
+        stats = client.get_stats(today)
+        rhr = client.get_rhr_day(yesterday)
+        readiness = client.get_training_readiness(today)
+        status = client.get_training_status(today)
+        body_battery = client.get_body_battery(today)
+        hrv = client.get_hrv_data(today)
+        sleep = client.get_sleep_data(today)
+        stress = client.get_stress_data(today)
+        
+        # 3. User & Device Info
         full_name = client.get_full_name()
+        profile = client.get_user_profile()
+        devices = client.get_devices()
+        
+        # 4. Progress & Records
+        records = client.get_personal_record()
+        
+        system_user_id = profile.get("systemuserId") or profile.get("systemuser_id")
+        gear = client.get_gear(system_user_id) if system_user_id else None
         
         return {
+            "success": True,
             "activities": activities,
-            "stats": stats,
             "fullName": full_name,
-            "success": True
+            "profile": profile,
+            "health": {
+                "stats": stats,
+                "rhr": rhr,
+                "readiness": readiness,
+                "status": status,
+                "bodyBattery": body_battery,
+                "hrv": hrv,
+                "sleep": sleep,
+                "stress": stress
+            },
+            "gear": gear,
+            "records": records,
+            "devices": devices
         }
         
     except Exception as e:
@@ -86,6 +164,43 @@ def get_garmin_activity_details(req: https_fn.CallableRequest):
         }
     except Exception as e:
         logging.error(f"Garmin details error: {str(e)}")
+        return {"error": str(e)}
+
+@https_fn.on_call(region="europe-west1")
+def get_garmin_activity_splits(req: https_fn.CallableRequest):
+    if req.auth is None:
+        raise https_fn.HttpsError(
+            code=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
+            message="The function must be called while authenticated."
+        )
+    
+    activity_id = req.data.get("activityId")
+    if not activity_id:
+        raise https_fn.HttpsError(
+            code=https_fn.FunctionsErrorCode.INVALID_ARGUMENT,
+            message="Activity ID is required."
+        )
+
+    uid = req.auth.uid
+    db = firestore.client()
+    user_data = db.collection("users").document(uid).get().to_dict() or {}
+    email, password = user_data.get("garminEmail"), user_data.get("garminPassword")
+
+    if not email or not password:
+        return {"needsAuth": True}
+
+    try:
+        client = Garmin(email, password)
+        client.login()
+        
+        splits = client.get_activity_splits(activity_id)
+        
+        return {
+            "splits": splits,
+            "success": True
+        }
+    except Exception as e:
+        logging.error(f"Garmin splits error: {str(e)}")
         return {"error": str(e)}
 
 @https_fn.on_call(region="europe-west1")

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { MapPin, BarChart3, Settings, Save, Zap, Clock, Activity, Map as MapIcon } from 'lucide-react';
+import { Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { MapPin, BarChart3, Settings, Save, Zap, Clock, Activity, Map as MapIcon, LogOut, Terminal } from 'lucide-react';
 import polyline from '@mapbox/polyline';
 // import { auth, signInWithGoogle, logout, saveStravaConfig, getStravaConfig, functions, saveStravaData } from './firebase';
 // import { auth, signInWithGoogle, logout, functions } from './firebase';
-import { auth, signInWithGoogle, logout, functions, saveGarminData } from './firebase';
+import { auth, signInWithGoogle, logout, functions, saveGarminData, saveActivityStream } from './firebase';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -12,6 +12,9 @@ import { httpsCallable } from 'firebase/functions';
 
 import Dashboard from './components/Dashboard/Dashboard';
 import RoutePlanner from './components/Map/RoutePlanner';
+import AdminPanel from './components/Admin/AdminPanel';
+import GarminDiscoveryHub from './components/Admin/GarminDiscoveryHub';
+import ActivityDeepDive from './components/ActivityDetail/ActivityDeepDive';
 
 const NavLink = ({ to, icon: Icon, children }) => {
   const location = useLocation();
@@ -29,8 +32,42 @@ const NavLink = ({ to, icon: Icon, children }) => {
   );
 };
 
+const MobileNavLink = ({ to, icon: Icon }) => {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+  return (
+    <Link 
+      to={to} 
+      className={`p-2 rounded-lg transition-all ${
+        isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'
+      }`}
+    >
+      <Icon size={18} />
+    </Link>
+  );
+};
+
 function App() {
+  const navigate = useNavigate();
+  const formatPace = (secondsPerKm) => {
+    if (!secondsPerKm || isNaN(secondsPerKm) || !isFinite(secondsPerKm)) return "0:00";
+    const mins = Math.floor(secondsPerKm / 60);
+    const secs = Math.round(secondsPerKm % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatTimeTooltip = (seconds) => {
+    if (seconds === null || seconds === undefined || isNaN(seconds)) return "0:00";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.round(seconds % 60);
+    return h > 0 
+      ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+      : `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   const [user, setUser] = useState(null);
+  const [apiLogs, setApiLogs] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
   const [waypoints, setWaypoints] = useState([]);
   const [history, setHistory] = useState([]);
@@ -43,8 +80,6 @@ function App() {
   const [athleteZones, setAthleteZones] = useState(null);
   const [athleteProfile, setAthleteProfile] = useState(null);
   const [selectedActivityId, setSelectedActivityId] = useState(null);
-  const [rateLimitExceeded, setRateLimitExceeded] = useState(false);
-  const [secondsToReset, setSecondsToReset] = useState(0);
   const [showSidebar, setShowSidebar] = useState(true);
   const [showStats, setShowStats] = useState(true);
   const [activityStreams, setActivityStreams] = useState({});
@@ -66,8 +101,8 @@ function App() {
     const totalTime = garminActivities.reduce((acc, a) => acc + (a.moving_time || 0), 0);
     const gpsCount = garminActivities.filter(a => a.decodedPolyline).length;
     return {
-      totalDistance: (totalDistance / 1000).toFixed(1),
-      totalElevation,
+      totalDistance: (totalDistance / 1000).toFixed(0),
+      totalElevation: Math.round(totalElevation),
       totalHours: Math.floor(totalTime / 3600),
       count: garminActivities.length,
       gpsCount
@@ -116,6 +151,44 @@ function App() {
     } catch (err) { console.error("Search error", err); }
   };
 
+  const addApiLog = (functionName, data, status = 'success', params = null) => {
+    const newLog = {
+      id: Date.now() + Math.random().toString(36).substring(7),
+      timestamp: new Date(),
+      functionName,
+      data,
+      status,
+      params
+    };
+    setApiLogs(prev => [newLog, ...prev].slice(0, 50)); // Keep last 50
+  };
+
+  const fetchGarminSplits = async (activityId) => {
+    // Check if we already have splits in the activity state
+    const activity = garminActivities.find(a => String(a.id) === String(activityId));
+    if (activity?.splits) return;
+
+    try {
+      const getSplits = httpsCallable(functions, 'get_garmin_activity_splits');
+      const splitsResult = await getSplits({ activityId });
+      if (splitsResult.data.splits) {
+        addApiLog('get_garmin_activity_splits', splitsResult.data.splits, 'success', { activityId });
+        const splits = splitsResult.data.splits.lapDTOs;
+        
+        setGarminActivities(prev => {
+          const next = prev.map(a => 
+            String(a.id) === String(activityId) 
+              ? { ...a, splits } 
+              : a
+          );
+          // Save the enriched activity list to Firestore
+          if (user) saveGarminData(user.uid, next, garminStats);
+          return next;
+        });
+      }
+    } catch (splitsErr) { console.error("Failed to fetch splits", splitsErr); }
+  };
+
   const fetchGarminActivities = async () => {
     if (!user) return;
     setIsLoading(true);
@@ -124,36 +197,47 @@ function App() {
       const result = await getActivities();
       
       if (result.data.activities) {
+        addApiLog('get_garmin_activities', result.data);
         const mappedActivities = result.data.activities.map(a => {
           return {
             id: a.activityId,
             name: a.activityName,
             start_date: a.startTimeLocal,
-            distance: a.distance,
-            moving_time: a.movingDuration || a.duration,
-            total_elevation_gain: a.elevationGain,
+            distance: Math.round(a.distance),
+            moving_time: Math.round(a.movingDuration || a.duration || 0),
+            total_elevation_gain: Math.round(a.elevationGain || 0),
             type: a.activityType.typeKey,
             sport_type: a.activityType.typeKey,
-            average_heartrate: a.averageHR,
-            max_heartrate: a.maxHR,
-            average_cadence: a.averageRunningCadenceInStepsPerMinute || a.averageRunCadence, 
+            average_heartrate: Math.round(a.averageHR),
+            max_heartrate: Math.round(a.maxHR),
+            average_cadence: Math.round(a.averageRunningCadenceInStepsPerMinute || a.averageRunCadence), 
+            lat: a.startLatitude,
+            lng: a.startLongitude,
             garmin_raw: a,
             source: 'garmin'
           };
         });
+
+        // Automatically fetch details for GPS activities (non-treadmill)
+        mappedActivities.forEach(activity => {
+          if (activity.type !== 'treadmill_running') {
+            fetchGarminActivityDetail(activity.id);
+          }
+        });
+
         setGarminActivities(mappedActivities);
         
         // Handle Garmin stats/profile if returned
-        if (result.data.stats) {
-            setGarminStats(result.data.stats);
-            // Use Garmin's name/data
+        if (result.data) {
+            setGarminStats(result.data);
             setAthleteProfile({
-                fullName: result.data.fullName || result.data.stats.displayName || 'Garmin User',
+                fullName: result.data.fullName || result.data.health?.stats?.displayName || 'Garmin User',
                 profile: result.data.activities[0]?.ownerProfileImageUrlLarge || null 
             });
+            if (result.data.gear) setGear(result.data.gear);
         }
         
-        await saveGarminData(user.uid, mappedActivities, result.data.stats);
+        await saveGarminData(user.uid, mappedActivities, result.data);
       }
     } catch (err) {
       console.error("Garmin fetch failed", err);
@@ -163,13 +247,47 @@ function App() {
   };
 
   const fetchGarminActivityDetail = async (activityId) => {
+    if (!user) return;
     setSelectedActivityId(activityId);
+
+    // Check cache first
+    if (activityStreams[activityId]) {
+      addApiLog('get_garmin_activity_details', { status: 'Using local cache' }, 'success', { activityId });
+      return;
+    }
+    
+    // Check Firestore cache
+    try {
+      const streamRef = doc(db, "users", user.uid, "streams", String(activityId));
+      const streamSnap = await getDoc(streamRef);
+      if (streamSnap.exists()) {
+        const data = streamSnap.data();
+        let stream = data.stream || [];
+        
+        // Heal logic for incorrectly scaled time from previous version
+        if (stream.length > 50 && stream[stream.length - 1].time < 10) {
+          stream = stream.map(p => ({ ...p, time: Math.round(p.time * 1000) }));
+        }
+
+        setActivityStreams(prev => ({ ...prev, [activityId]: stream }));
+        addApiLog('get_garmin_activity_details', data.rawDetails || { status: 'Using Firestore cache', streamLength: stream.length }, 'success', { activityId });
+        
+        // Check if we need to fetch splits (if they weren't in the cached activity)
+        const currentActivity = garminActivities.find(a => String(a.id) === String(activityId));
+        if (currentActivity && !currentActivity.splits) {
+          fetchGarminSplits(activityId);
+        }
+        return;
+      }
+    } catch (e) { console.error("Cache check failed", e); }
+
     setIsLoading(true);
     try {
       const getDetail = httpsCallable(functions, 'get_garmin_activity_details');
       const result = await getDetail({ activityId });
       
       if (result.data.details) {
+        addApiLog('get_garmin_activity_details', result.data, 'success', { activityId });
         const details = result.data.details;
         const descriptors = details.metricDescriptors || [];
         const metricsData = details.activityDetailMetrics || [];
@@ -193,35 +311,55 @@ function App() {
 
         metricsData.forEach((m, i) => {
           const metrics = m.metrics;
-          const lat = metrics[latIdx];
-          const lon = metrics[lonIdx];
+          const lat = latIdx !== undefined ? metrics[latIdx] : null;
+          const lon = lonIdx !== undefined ? metrics[lonIdx] : null;
           
-          if (lat !== null && lon !== null) {
+          if (lat !== null && lon !== null && lat !== 0 && lon !== 0 && !isNaN(lat) && !isNaN(lon)) {
             decodedPolyline.push([lat, lon]);
           }
 
-          const s = metrics[speedIdx] || 0;
-          const hr = metrics[hrIdx];
-          const dist = metrics[distIdx] ? metrics[distIdx] / 1000 : 0;
+          const s = speedIdx !== undefined ? metrics[speedIdx] : 0;
+          const hr = hrIdx !== undefined ? metrics[hrIdx] : null;
+          const dist = (distIdx !== undefined && metrics[distIdx] !== null) ? metrics[distIdx] : 0;
+          const cadence = cadenceIdx !== undefined ? metrics[cadenceIdx] : null;
+          const alt = altIdx !== undefined ? metrics[altIdx] : null;
+          const time = timeIdx !== undefined ? metrics[timeIdx] : null;
           
+          // Speed to Pace conversion
+          let currentPace = null;
+          if (s > 0.5) {
+            currentPace = 1000 / s;
+            // Sanity check: cap pace at 20 min/km to avoid extreme spikes in charts
+            if (currentPace > 1200) currentPace = 1200;
+          }
+
           chartData.push({
-            time: metrics[timeIdx] ? metrics[timeIdx] / 1000 : i,
-            distance: Number(dist.toFixed(2)),
-            heartrate: hr,
-            cadence: metrics[cadenceIdx],
-            altitude: metrics[altIdx],
-            pace: s > 0.5 ? (1000 / s) : null,
-            efficiency: (hr > 40 && s > 0.5) ? (s / hr) : null,
-            latlng: (lat !== null && lon !== null) ? [lat, lon] : null
+            time: time !== null ? (time > 1000000000000 ? Math.round((time - metricsData[0].metrics[timeIdx]) / 1000) : Math.round(time)) : i,
+            distance: Number((dist / 1000).toFixed(2)),
+            heartrate: hr !== null ? Math.round(hr) : null,
+            cadence: cadence !== null ? Math.round(cadence) : null,
+            altitude: alt !== null ? Math.round(alt) : null,
+            pace: currentPace,
+            efficiency: (hr !== null && hr > 40 && s > 0.5) ? (s / hr) : null,
+            latlng: (lat !== null && lon !== null && lat !== 0 && lon !== 0 && !isNaN(lat) && !isNaN(lon)) ? [lat, lon] : null,
+            // Track total cumulative distance in meters for split generation
+            cumDistance: dist
           });
         });
 
         setActivityStreams(prev => ({ ...prev, [activityId]: chartData }));
         if (decodedPolyline.length > 0) {
-          setGarminActivities(prev => prev.map(a => a.id === activityId ? { ...a, decodedPolyline } : a));
+          setGarminActivities(prev => prev.map(a => a.id === activityId ? { ...a, decodedPolyline, lat: decodedPolyline[0][0], lng: decodedPolyline[0][1] } : a));
           setMapCenter(decodedPolyline[0]);
         }
+
+        // Save to Firestore with raw details for future admin inspection
+        await saveActivityStream(user.uid, activityId, chartData, result.data.details);
       }
+
+      // Fetch Splits automatically
+      fetchGarminSplits(activityId);
+
     } catch (err) {
       console.error("Garmin detail fetch failed", err);
     } finally {
@@ -237,7 +375,7 @@ function App() {
       const linkAccount = httpsCallable(functions, 'link_garmin_account');
       const result = await linkAccount({ 
         email: garminEmail, 
-        password: garminPassword,
+        password: garminPassword, 
         mfaCode: mfaCode 
       });
       
@@ -261,100 +399,6 @@ function App() {
     }
   };
 
-  const fetchStravaActivityDetail = async (activityId) => {
-    setSelectedActivityId(activityId);
-    setIsLoading(true);
-    try {
-      const getDetail = httpsCallable(functions, 'getStravaActivityDetail');
-      const result = await getDetail({ activityId });
-      
-      if (result.data.activity) {
-        const activity = result.data.activity;
-        if (activity.map?.polyline) {
-          const decoded = polyline.decode(activity.map.polyline);
-          setStravaActivities(prev => prev.map(a => a.id === activityId ? { ...a, ...activity, decodedPolyline: decoded } : a));
-          setMapCenter(decoded[0]);
-        } else {
-          setStravaActivities(prev => prev.map(a => a.id === activityId ? { ...a, ...activity } : a));
-        }
-
-        try {
-          const getStreams = httpsCallable(functions, 'getStravaActivityStreams');
-          const streamResult = await getStreams({ activityId });
-          if (streamResult.data.streams) {
-            const streams = streamResult.data.streams;
-            const timeStream = streams.find(s => s.type === 'time')?.data || [];
-            const hrStream = streams.find(s => s.type === 'heartrate')?.data || [];
-            const cadenceStream = streams.find(s => s.type === 'cadence')?.data || [];
-            const distanceStream = streams.find(s => s.type === 'distance')?.data || [];
-            const altitudeStream = streams.find(s => s.type === 'altitude')?.data || [];
-            const velocityStream = streams.find(s => s.type === 'velocity_smooth')?.data || [];
-            const latlngStream = streams.find(s => s.type === 'latlng')?.data || [];
-
-            const chartData = timeStream.map((t, i) => {
-              const speed = velocityStream[i] || 0;
-              const hr = hrStream[i] || 0;
-              // Pace in seconds per kilometer (1000m / speed m/s)
-              const paceSkm = speed > 0.5 ? (1000 / speed) : null;
-              
-              // Performance efficiency: Speed (m/s) divided by HR (bpm)
-              // Higher speed at lower heart rate = higher efficiency
-              const efficiency = (hr > 40 && speed > 0.5) ? (speed / hr) : null;
-              
-              return {
-                time: t,
-                distance: Number((distanceStream[i] / 1000).toFixed(2)),
-                heartrate: hr || null,
-                cadence: (cadenceStream[i] * 2) || null,
-                altitude: altitudeStream[i] || null,
-                pace: paceSkm,
-                latlng: latlngStream[i] || null,
-                efficiency
-              };
-            });
-
-            setActivityStreams(prev => ({ ...prev, [activityId]: chartData }));
-          }
-        } catch (streamErr) { console.error("Failed to fetch streams", streamErr); }
-      }
-    } catch (err) { console.error(err); } finally { setIsLoading(false); }
-  };
-
-  const handleSaveStrava = async (e) => {
-    e.preventDefault();
-    if (!user) return;
-    try {
-      await saveStravaConfig(user.uid, stravaClientId, stravaClientSecret, stravaRefreshToken);
-      if (!stravaRefreshToken) {
-        const redirectUri = window.location.hostname === 'localhost' ? `http://localhost:5000` : window.location.origin;
-        window.location.href = `https://www.strava.com/oauth/authorize?client_id=${stravaClientId}&redirect_uri=${redirectUri}&response_type=code&scope=read,activity:read_all&approval_prompt=force`;
-      } else {
-        setShowSettings(false);
-        fetchStravaActivities();
-      }
-    } catch (err) { console.error(err); }
-  };
-
-  useEffect(() => {
-    if (!rateLimitExceeded || secondsToReset <= 0) return;
-    const timer = setInterval(() => {
-      setSecondsToReset(prev => {
-        if (prev <= 1) {
-          setRateLimitExceeded(false);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [rateLimitExceeded, secondsToReset]);
-
-  const countdownText = useMemo(() => {
-    const m = Math.floor(secondsToReset / 60);
-    const s = secondsToReset % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  }, [secondsToReset]);
-
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -371,12 +415,18 @@ function App() {
               let decodedPolyline = null;
               if (a.decodedPolyline) {
                 decodedPolyline = a.decodedPolyline;
-              } else if (a.map && a.map.summary_polyline) {
-                try { decodedPolyline = polyline.decode(a.map.summary_polyline); } catch (e) { console.error(e); }
               }
               return { ...a, decodedPolyline };
             });
             setGarminActivities(loadedActivities);
+
+            // Fetch details and splits for activities without splits data
+            loadedActivities.forEach(activity => {
+              if (activity.type !== 'treadmill_running' && !activity.splits) {
+                // Fetch detail will also trigger split fetch
+                fetchGarminActivityDetail(activity.id);
+              }
+            });
           }
           if (config.cachedGarminStats) setGarminStats(config.cachedGarminStats);
           if (config.cachedZones) setAthleteZones(config.cachedZones);
@@ -433,43 +483,48 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen w-full bg-white font-sans overflow-hidden">
-      <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 p-4 shadow-sm flex justify-between items-center z-[2000]">
-          <div className="flex items-center gap-12">
-            <div className="flex items-center gap-3">
-              <div className="bg-slate-900 p-2 rounded-xl shadow-lg"><MapPin size={22} className="text-white" /></div>
-              <h1 className="text-xl font-black tracking-tight text-slate-900 uppercase">RouteFlow</h1>
+      <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 p-3 md:p-4 shadow-sm flex justify-between items-center z-[2000] sticky top-0">
+          <div className="flex items-center gap-4 md:gap-12">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="bg-slate-900 p-1.5 md:p-2 rounded-lg md:rounded-xl shadow-lg shrink-0">
+                <MapPin size={18} className="text-white md:w-[22px] md:h-[22px]" />
+              </div>
+              <h1 className="text-sm md:text-xl font-black tracking-tighter text-slate-900 uppercase">RouteFlow</h1>
             </div>
-            <nav className="hidden md:flex items-center gap-4">
+            <nav className="hidden md:flex items-center gap-1 lg:gap-4">
               <NavLink to="/" icon={MapIcon}>Planner</NavLink>
               <NavLink to="/dashboard" icon={BarChart3}>Dashboard</NavLink>
             </nav>
           </div>
           
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 md:gap-6 shrink-0">
+            {/* Mobile Nav Toggle */}
+            <div className="md:hidden flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+               <MobileNavLink to="/" icon={MapIcon} />
+               <MobileNavLink to="/dashboard" icon={BarChart3} />
+            </div>
+
             {user && (
-              <div className="flex items-center gap-3">
-                {rateLimitExceeded && (
-                  <div className="bg-red-50 text-red-500 text-[10px] px-3 py-1.5 rounded-xl font-black flex items-center gap-2">
-                    <Clock size={12} /> {countdownText}
-                  </div>
-                )}
-                <button 
-                  onClick={fetchGarminActivities} 
-                  disabled={isLoading} 
-                  className="bg-blue-600 text-white px-4 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center gap-2"
-                >
-                  <Activity size={14} /> Garmin Sync
+              <button 
+                onClick={fetchGarminActivities} 
+                disabled={isLoading} 
+                className="bg-blue-600 text-white p-2 md:px-4 md:py-2.5 rounded-lg md:rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-blue-100"
+              >
+                <Activity size={14} /> <span className="hidden lg:inline">Garmin Sync</span>
+              </button>
+            )}
+            <button onClick={() => setShowSettings(!showSettings)} className="p-2 md:p-2.5 hover:bg-slate-100 rounded-xl md:rounded-2xl transition-all text-slate-400 hover:text-slate-900"><Settings size={20} className="md:w-[22px] md:h-[22px]" /></button>
+            {user ? (
+              <div className="flex items-center gap-2 md:gap-4 pl-2 md:pl-4 border-l border-slate-100">
+                <img src={user.photoURL} alt="" className="w-8 h-8 md:w-10 md:h-10 rounded-xl md:rounded-[1.2rem] border-2 border-white shadow-md md:shadow-lg object-cover" />
+                <button onClick={logout} className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 hover:text-red-500 tracking-widest transition-colors flex items-center gap-1">
+                  <LogOut size={12} className="md:hidden" />
+                  <span className="hidden xs:inline">Sign Out</span>
+                  <span className="xs:hidden">Out</span>
                 </button>
               </div>
-            )}
-            <button onClick={() => setShowSettings(!showSettings)} className="p-2.5 hover:bg-slate-100 rounded-2xl transition-all text-slate-400 hover:text-slate-900"><Settings size={22} /></button>
-            {user ? (
-              <div className="flex items-center gap-4 pl-4 border-l border-slate-100">
-                <img src={user.photoURL} alt="" className="w-10 h-10 rounded-[1.2rem] border-2 border-white shadow-lg object-cover" />
-                <button onClick={logout} className="text-[10px] font-black uppercase text-slate-400 hover:text-red-500 tracking-widest">Sign Out</button>
-              </div>
             ) : (
-              <button onClick={signInWithGoogle} className="bg-slate-900 hover:bg-black text-white px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-slate-200">Sign In</button>
+              <button onClick={signInWithGoogle} className="bg-slate-900 hover:bg-black text-white px-4 md:px-6 py-2 md:py-2.5 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all shadow-xl shadow-slate-200">In</button>
             )}
           </div>
         </header>
@@ -496,6 +551,23 @@ function App() {
                   </button>
                 </form>
               </div>
+
+              <div className="pt-6 border-t border-slate-100 space-y-2">
+                <Link 
+                  to="/discovery" 
+                  onClick={() => setShowSettings(false)}
+                  className="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all uppercase text-[10px] tracking-widest"
+                >
+                  <Terminal size={18} /> API Discovery Hub
+                </Link>
+                <Link 
+                  to="/admin" 
+                  onClick={() => setShowSettings(false)}
+                  className="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 font-black py-4 rounded-2xl flex items-center justify-center gap-3 transition-all uppercase text-[10px] tracking-widest"
+                >
+                  <Activity size={18} /> View API Telemetry
+                </Link>
+              </div>
             </div>
           </div>
         )}
@@ -507,7 +579,6 @@ function App() {
               selectedActivityId={selectedActivityId} 
               setSelectedActivityId={setSelectedActivityId}
               isLoading={isLoading}
-              fetchStravaActivities={fetchGarminActivities}
               fetchStravaActivityDetail={fetchGarminActivityDetail}
               mapCenter={mapCenter} setMapCenter={setMapCenter}
               waypoints={waypoints} setWaypoints={setWaypoints}
@@ -525,6 +596,8 @@ function App() {
               setActiveStreamType={setActiveStreamType}
               starredRoutes={starredRoutes}
               athleteZones={athleteZones}
+              formatPace={formatPace}
+              formatTimeTooltip={formatTimeTooltip}
             />
           } />
           <Route path="/dashboard" element={
@@ -533,11 +606,24 @@ function App() {
               athleteStats={garminStats} 
               athleteZones={athleteZones} 
               athleteProfile={athleteProfile} 
-              rateLimitExceeded={rateLimitExceeded} 
-              countdownText={countdownText} 
               gear={gear}
+              formatPace={formatPace}
+              formatTime={formatTimeTooltip}
+              onFetchNewData={fetchGarminActivities}
+              isLoading={isLoading}
             />
           } />
+          <Route path="/admin" element={<AdminPanel apiLogs={apiLogs} />} />
+          <Route path="/discovery" element={<GarminDiscoveryHub />} />
+          <Route path="/activity/:activityId" element={
+            <ActivityDeepDive 
+              garminActivities={garminActivities}
+              activityStreams={activityStreams}
+              formatPace={formatPace}
+              formatTime={formatTimeTooltip}
+            />
+          } />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
   );

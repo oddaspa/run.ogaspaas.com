@@ -1,0 +1,94 @@
+{
+  "userProfilePK": 139603148,
+  "calendarDate": "2026-02-11",
+  "startTimestampGMT": "2026-02-10T23:00:00.0",
+  "endTimestampGMT": "2026-02-11T13:37:00.0",
+  "startTimestampLocal": "2026-02-11T00:00:00.0",
+  "endTimestampLocal": "2026-02-11T14:37:00.0",
+  "maxStressLevel": 99,
+  "avgStressLevel": 40,
+  "stressChartValueOffset": 1,
+  "stressChartYAxisOrigin": -1,
+  "stressValueDescriptorsDTOList": [
+    {
+      "key": "timestamp",
+      "index": 0
+    },
+    {
+      "key": "stressLevel",
+      "index": 1
+    }
+  ],
+  "stressValuesArray": [
+    [
+      1770764400000,
+      35
+    ],
+    [
+      1770764580000,
+      37
+    ],
+    [
+      1770764760000,
+      27
+    ],
+    [
+      1770764940000,
+      28
+    ],
+    [
+      1770765120000,
+      31
+    ]
+  ],
+  "bodyBatteryValueDescriptorsDTOList": [
+    {
+      "bodyBatteryValueDescriptorIndex": 0,
+      "bodyBatteryValueDescriptorKey": "timestamp"
+    },
+    {
+      "bodyBatteryValueDescriptorIndex": 1,
+      "bodyBatteryValueDescriptorKey": "bodyBatteryStatus"
+    },
+    {
+      "bodyBatteryValueDescriptorIndex": 2,
+      "bodyBatteryValueDescriptorKey": "bodyBatteryLevel"
+    },
+    {
+      "bodyBatteryValueDescriptorIndex": 3,
+      "bodyBatteryValueDescriptorKey": "bodyBatteryVersion"
+    }
+  ],
+  "bodyBatteryValuesArray": [
+    [
+      1770764400000,
+      "MEASURED",
+      5,
+      3.0
+    ],
+    [
+      1770764580000,
+      "MEASURED",
+      6,
+      3.0
+    ],
+    [
+      1770764760000,
+      "MEASURED",
+      6,
+      3.0
+    ],
+    [
+      1770764940000,
+      "MEASURED",
+      6,
+      3.0
+    ],
+    [
+      1770765120000,
+      "MEASURED",
+      6,
+      3.0
+    ]
+  ]
+}

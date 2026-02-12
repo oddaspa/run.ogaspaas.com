@@ -41,9 +41,59 @@ export const logout = () => signOut(auth);
 
 export const saveGarminData = async (uid, activities, stats) => {
   const data = {
-    cachedGarminActivities: activities,
-    cachedGarminStats: stats,
+    cachedGarminActivities: activities || [],
+    cachedGarminStats: stats || null,
     lastGarminSyncedAt: new Date()
   };
-  await setDoc(doc(db, "users", uid), data, { merge: true });
+  // Aggressive recursive cleaner to handle Firestore limitations (no undefined, no nested arrays)
+  const clean = (obj) => {
+    if (obj === undefined) return null;
+    if (obj === null || typeof obj !== 'object') return obj;
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => {
+        const cleanedItem = clean(item);
+        // If the item inside this array is another array, we MUST stringify it
+        if (Array.isArray(cleanedItem)) return JSON.stringify(cleanedItem);
+        return cleanedItem;
+      });
+    }
+
+    const newObj = {};
+    for (const key in obj) {
+      const val = clean(obj[key]);
+      if (val !== undefined) {
+        newObj[key] = val;
+      }
+    }
+    return newObj;
+  };
+
+  await setDoc(doc(db, "users", uid), clean(data), { merge: true });
+};
+
+export const saveActivityStream = async (uid, activityId, stream, rawDetails = null) => {
+  const streamRef = doc(db, "users", uid, "streams", String(activityId));
+  
+  // Truncate stream if it's too large for a single document (Firestore limit is 1MB)
+  // Each point is ~100 bytes, so 10,000 points is ~1MB.
+  const MAX_POINTS = 8000; 
+  const processedStream = stream.length > MAX_POINTS 
+    ? stream.filter((_, i) => i % Math.ceil(stream.length / MAX_POINTS) === 0)
+    : stream;
+
+  const data = { 
+    stream: processedStream, 
+    updatedAt: new Date() 
+  };
+  
+  // Only save rawDetails if it fits (often the cause of the 1MB limit error)
+  if (rawDetails) {
+    const rawStr = JSON.stringify(rawDetails);
+    if (rawStr.length < 500000) { // Keep under 0.5MB to be safe
+      data.rawDetails = rawDetails;
+    }
+  }
+
+  await setDoc(streamRef, data, { merge: true });
 };

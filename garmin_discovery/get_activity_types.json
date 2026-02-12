@@ -1,0 +1,26 @@
+[
+  {
+    "typeId": 1,
+    "typeKey": "running",
+    "parentTypeId": 17,
+    "isHidden": false,
+    "restricted": false,
+    "trimmable": true
+  },
+  {
+    "typeId": 2,
+    "typeKey": "cycling",
+    "parentTypeId": 17,
+    "isHidden": false,
+    "restricted": false,
+    "trimmable": true
+  },
+  {
+    "typeId": 3,
+    "typeKey": "hiking",
+    "parentTypeId": 17,
+    "isHidden": false,
+    "restricted": false,
+    "trimmable": true
+  }
+]

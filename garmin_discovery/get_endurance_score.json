@@ -1,0 +1,15 @@
+{
+  "userProfilePK": 139603148,
+  "startDate": "2026-02-11",
+  "endDate": "2026-02-11",
+  "avg": null,
+  "max": null,
+  "groupMap": {
+    "2026-02-05": {
+      "groupAverage": null,
+      "groupMax": null,
+      "enduranceContributorDTOList": []
+    }
+  },
+  "enduranceScoreDTO": null
+}

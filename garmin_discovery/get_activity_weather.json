@@ -1,0 +1,23 @@
+{
+  "issueDate": "2026-02-10T05:00:00.000+00:00",
+  "temp": 23,
+  "apparentTemp": 14,
+  "dewPoint": 19,
+  "relativeHumidity": 84,
+  "windDirection": 220,
+  "windDirectionCompassPoint": "sw",
+  "windSpeed": 8,
+  "windGust": null,
+  "latitude": 63.41669795103371,
+  "longitude": 10.44999998062849,
+  "weatherStationDTO": {
+    "id": "01257",
+    "name": "",
+    "timezone": null
+  },
+  "weatherTypeDTO": {
+    "weatherTypePk": null,
+    "desc": "Unknown",
+    "image": null
+  }
+}

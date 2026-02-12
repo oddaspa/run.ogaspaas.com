@@ -1,0 +1,88 @@
+{
+  "userId": 139603148,
+  "mostRecentVO2Max": {
+    "userId": 139603148,
+    "generic": {
+      "calendarDate": "2026-02-10",
+      "vo2MaxPreciseValue": 47.9,
+      "vo2MaxValue": 48.0,
+      "fitnessAge": null,
+      "fitnessAgeDescription": null,
+      "maxMetCategory": 0
+    },
+    "cycling": null,
+    "heatAltitudeAcclimation": null
+  },
+  "mostRecentTrainingLoadBalance": {
+    "userId": 139603148,
+    "metricsTrainingLoadBalanceDTOMap": {
+      "3603563792": {
+        "calendarDate": "2026-02-11",
+        "deviceId": 3603563792,
+        "monthlyLoadAerobicLow": 412.61902,
+        "monthlyLoadAerobicHigh": 108.06166,
+        "monthlyLoadAnaerobic": 0.0,
+        "monthlyLoadAerobicLowTargetMin": 103,
+        "monthlyLoadAerobicLowTargetMax": 279,
+        "monthlyLoadAerobicHighTargetMin": 248,
+        "monthlyLoadAerobicHighTargetMax": 424,
+        "monthlyLoadAnaerobicTargetMin": 0,
+        "monthlyLoadAnaerobicTargetMax": 246,
+        "trainingBalanceFeedbackPhrase": "AEROBIC_HIGH_SHORTAGE",
+        "primaryTrainingDevice": true
+      }
+    },
+    "recordedDevices": [
+      {
+        "deviceId": 3603563792,
+        "imageURL": "https://res.garmin.com/en/products/010-02810-10/v/c1_01_md.png",
+        "deviceName": "Forerunner 265",
+        "category": 0
+      }
+    ]
+  },
+  "mostRecentTrainingStatus": {
+    "userId": 139603148,
+    "latestTrainingStatusData": {
+      "3603563792": {
+        "calendarDate": "2026-02-11",
+        "sinceDate": "2026-02-11",
+        "weeklyTrainingLoad": null,
+        "trainingStatus": 8,
+        "timestamp": 1770787207000,
+        "deviceId": 3603563792,
+        "loadTunnelMin": null,
+        "loadTunnelMax": null,
+        "loadLevelTrend": null,
+        "sport": null,
+        "subSport": null,
+        "fitnessTrendSport": "NONE",
+        "fitnessTrend": 0,
+        "trainingStatusFeedbackPhrase": "STRAINED_4",
+        "trainingPaused": false,
+        "acuteTrainingLoadDTO": {
+          "acwrPercent": 42,
+          "acwrStatus": "OPTIMAL",
+          "acwrStatusFeedback": "FEEDBACK_2",
+          "dailyTrainingLoadAcute": 193,
+          "maxTrainingLoadChronic": 264.0,
+          "minTrainingLoadChronic": 140.8,
+          "dailyTrainingLoadChronic": 176,
+          "dailyAcuteChronicWorkloadRatio": 1.0
+        },
+        "primaryTrainingDevice": true
+      }
+    },
+    "recordedDevices": [
+      {
+        "deviceId": 3603563792,
+        "imageURL": "https://res.garmin.com/en/products/010-02810-10/v/c1_01_md.png",
+        "deviceName": "Forerunner 265",
+        "category": 0
+      }
+    ],
+    "showSelector": false,
+    "lastPrimarySyncDate": "2026-02-11"
+  },
+  "heatAltitudeAcclimationDTO": null
+}
